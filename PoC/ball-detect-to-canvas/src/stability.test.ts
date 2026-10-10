@@ -79,3 +79,22 @@ describe('stationary-ball stabilization', () => {
     expect(s.update(ambiguous, .006).balls[0].kind).toBe('striped')
   })
 })
+
+
+it('keeps every position visible without duplicating a retained special-ball identity', () => {
+  const s = new BallStabilizer()
+  s.update(frame([{ ...ball(.1), kind: 'cue' }]), .006)
+  const movedCue = frame([{ ...ball(.8), kind: 'cue' }])
+  s.update(movedCue, .006)
+  const next = s.update(movedCue, .006).balls
+  expect(next).toHaveLength(2)
+  expect(next.filter(b => b.kind === 'cue')).toHaveLength(1)
+  expect(next.find(b => b.kind === 'cue')?.x).toBe(.8)
+  expect(next.find(b => b.x === .1)?.kind).toBe('unknown')
+  expect(s.update(movedCue, .006).balls).toHaveLength(1)
+})
+
+it('never invents a white or black ball in a layout containing only fulls', () => {
+  const s = new BallStabilizer()
+  expect(s.update(frame([ball(.2), ball(.6)]), .006).balls.map(b => b.kind)).toEqual(['solid', 'solid'])
+})

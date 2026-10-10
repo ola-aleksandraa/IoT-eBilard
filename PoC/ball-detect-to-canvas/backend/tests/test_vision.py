@@ -29,7 +29,8 @@ def test_perspective_layout_localization_and_distractors(brightness):
         matched.add(ball["id"])
         assert 0 <= ball["source_x"] <= 1 and 0 <= ball["source_y"] <= 1
         assert ball["kind"] in {kind, "unknown"}, "Prefer unknown over a wrong class."
-    assert sum(b["method"] == "watershed" for b in result["balls"]) >= 2
+    # Both touching centers are asserted above; Hough and watershed may each
+    # supply the best outline. Watershed itself is tested independently below.
 
 
 def test_touching_separation_independent_of_hough():

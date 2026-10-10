@@ -9,6 +9,10 @@ export type Ball = {
   x: number; y: number; radius: number; source_x: number; source_y: number;
   color: string; confidence: number; reason: string; white_fraction: number; method: string;
 }
+// Color encodes type only; individual pool-ball hues are deliberately ignored.
+export const BALL_COLORS: Record<Ball['kind'], string> = { cue: '#faf8ef', eight: '#202429', solid: '#e3ad48', striped: '#e3ad48', unknown: '#87949c' }
+export const BALL_NAMES: Record<Ball['kind'], string> = { cue: 'White', eight: 'Black', solid: 'Full', striped: 'Half', unknown: 'Unknown' }
+
 export type Detection = {
   balls: Ball[]; table: { width: number; height: number; ratio: number };
   cloth_hue: number | null; processing_ms: number; warnings: string[];
