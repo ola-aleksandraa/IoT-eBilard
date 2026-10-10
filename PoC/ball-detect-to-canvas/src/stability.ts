@@ -1,4 +1,4 @@
-import type { Ball, Calibration, Detection } from './types'
+import { BALL_COLORS, type Ball, type Calibration, type Detection } from './types'
 
 const median = (values: number[]) => {
   const sorted = [...values].sort((a, b) => a - b), middle = Math.floor(sorted.length / 2)
@@ -84,7 +84,18 @@ export class BallStabilizer {
       if (!usedBalls.has(i)) this.tracks.push({ ball: { ...ball, id: this.nextId++ }, misses: 0, hits: this.initialized ? 1 : 2, pending: null, appearance: null, appearanceHits: 0 })
     })
     this.initialized = true
-    return { ...detection, balls: this.tracks.filter(track => track.hits >= 2).map(track => ({ ...track.ball })),
+    // Hysteresis and dropout retention must not display two cue/eight balls.
+    // Demote the weaker display claim, keeping the position visible as unknown.
+    const visible = this.tracks.filter(track => track.hits >= 2)
+    const displayed = visible.map(track => ({ ...track.ball }))
+    for (const kind of ['cue', 'eight'] as const) {
+      const candidates = visible.map((track, index) => ({ track, index })).filter(({ track }) => track.ball.kind === kind)
+      candidates.sort((a, b) => a.track.misses - b.track.misses || b.track.ball.confidence - a.track.ball.confidence)
+      for (const { index } of candidates.slice(1)) {
+        displayed[index] = { ...displayed[index], kind: 'unknown', color: BALL_COLORS.unknown, confidence: .35, reason: 'Special-ball identity is uncertain while the layout settles.' }
+      }
+    }
+    return { ...detection, balls: displayed,
       coordinate_system: `${detection.coordinate_system}; display stabilized; IDs are session-local associations, not guaranteed physical identities` }
   }
 }

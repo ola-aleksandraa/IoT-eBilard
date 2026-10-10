@@ -31,9 +31,10 @@ class Calibration(StrictModel):
     @model_validator(mode="after")
     def valid_quad(self):
         points = np.float32([[p.x, p.y] for p in self.corners])
-        # In image coordinates TL, TR, BR, BL has positive signed area.
+        # Clockwise image coordinates have positive area; the first edge
+        # maps to canvas width and should follow the physical long side.
         if not cv2.isContourConvex(points) or cv2.contourArea(points, oriented=True) < 0.025:
-            raise ValueError("Corners must form a clockwise, convex table: top-left, top-right, bottom-right, bottom-left.")
+            raise ValueError("Corners must form a clockwise, convex table; start along its long edge.")
         return self
 
 

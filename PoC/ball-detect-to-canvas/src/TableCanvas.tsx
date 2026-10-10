@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { Ball } from './types'
+import { BALL_COLORS, type Ball } from './types'
 
 export default function TableCanvas({ balls, ratio, selected, onSelect, showLabels, showGrid }: {
   balls: Ball[]; ratio: number; selected: number | null; onSelect: (id: number | null) => void; showLabels: boolean; showGrid: boolean;
@@ -48,10 +48,10 @@ export default function TableCanvas({ balls, ratio, selected, onSelect, showLabe
         ctx.save()
         if (selected === ball.id) { ctx.strokeStyle = '#caff94'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(bx, by, r + 5, 0, Math.PI * 2); ctx.stroke() }
         ctx.shadowColor = '#092a3388'; ctx.shadowBlur = 4; ctx.shadowOffsetY = 2
-        ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fillStyle = ball.kind === 'striped' ? '#f0eee5' : ball.color; ctx.fill()
+        ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fillStyle = ball.kind === 'striped' ? '#f0eee5' : BALL_COLORS[ball.kind]; ctx.fill()
         ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0
         ctx.clip()
-        if (ball.kind === 'striped') { ctx.fillStyle = ball.color; ctx.fillRect(bx - r, by - r * 0.44, r * 2, r * 0.88) }
+        if (ball.kind === 'striped') { ctx.fillStyle = BALL_COLORS[ball.kind]; ctx.fillRect(bx - r, by - r * 0.44, r * 2, r * 0.88) }
         const shine = ctx.createRadialGradient(bx - r * 0.35, by - r * 0.45, 0, bx, by, r * 1.2)
         shine.addColorStop(0, '#ffffff65'); shine.addColorStop(0.4, '#ffffff00'); shine.addColorStop(1, '#00000040')
         ctx.fillStyle = shine; ctx.fillRect(bx - r, by - r, r * 2, r * 2)
