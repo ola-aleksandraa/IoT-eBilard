@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+.DS_Store
+.env
+test-results/
+playwright-report/
+backend/tests/real_photos/*
+backend/evaluation-output/
