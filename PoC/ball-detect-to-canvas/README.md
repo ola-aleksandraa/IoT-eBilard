@@ -183,6 +183,19 @@ Limitations:
 - Lighting, reflections, hands, deep shadows, cloth-colored balls, and motion blur can cause misses or false positives.
 - Touching separation is best effort. Fully occluded balls cannot be reconstructed reliably from a single view.
 - An invisible stripe can make a stripe ball look solid. “Unknown” handles visible ambiguity but cannot reveal hidden evidence.
-- The backend is stateless. Fixed-camera frontend filtering reduces display jitter and brief dropouts, but does not detect shot completion, compensate camera motion, read ball numbers, or predict trajectories. A falsely detected position can persist briefly; a wrong but consistent corner estimate can still lock. Recalibrate or set corners manually when needed.
+- The backend is stateless. Fixed-camera frontend filtering reduces display jitter and brief dropouts, but does not detect shot completion, compensate camera motion, read ball numbers, or track ball motion. Shot *planning* (not motion tracking) is available through `POST /api/shots`, see below. A falsely detected position can persist briefly; a wrong but consistent corner estimate can still lock. Recalibrate or set corners manually when needed.
 
 For a fixed installation, consistent exposure, a tighter table crop, and enough pixels per ball are more useful than forcing uncertain classifications.
+
+## Shot predictions (ghost-ball planner)
+
+`POST /api/shots` plans shots for the white ball with the engine in `backend/app/trajectory/` (adapted from [ai-billiard-system](https://github.com/carrotdan/ai-billiard-system)). It takes the balls from `/api/detect` in the same 0-1 table coordinates:
+
+```json
+{"balls": [{"id": 0, "kind": "cue", "x": 0.25, "y": 0.5, "radius": 0.026}, {"id": 1, "kind": "solid", "x": 0.6, "y": 0.4, "radius": 0.026}],
+ "table_ratio": 2.0, "top_n": 5, "include_bank": true, "include_blocked": false}
+```
+
+and returns ranked direct and one-cushion bank shots with `cue_path`, `target_path`, `cue_deflect_path` (white ball after contact), `ghost_pos`, `score`, `cut_angle` and `velocity_remaining` (0-1). Enable **Show shot predictions** in Settings to draw them on the virtual table. The engine works in pixels on a table 1000 px wide (`service.ENGINE_WIDTH`); physics constants live in `app/trajectory/config.py`.
+
+Scope: this plans where to aim and where the white ball goes after contact. It does not read the cue stick direction and has no spin or throw model.

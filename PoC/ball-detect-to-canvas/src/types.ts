@@ -19,6 +19,19 @@ export type Detection = {
   images: { rectified: string; mask: string; overlay: string } | null;
   homography: number[][]; coordinate_system: string;
 }
+export type Shot = {
+  target_ball_id: number; pocket: number; shot_type: 'direct' | 'bank'; score: number; cut_angle: number
+  is_blocked: boolean; blocked_reason: string | null; velocity_remaining: number
+  cue_path: [number, number][]; target_path: [number, number][]; cue_deflect_path: [number, number][]
+  ghost_pos: [number, number] | null; bank_point: [number, number] | null
+}
+export type ShotsResponse = { status: 'ok' | 'no_cue_ball' | 'multiple_cue_balls' | 'no_targets'; cue_ball_id: number | null; shots: Shot[]; blocked: Shot[] }
+export const POCKET_NAMES = ['top left', 'top middle', 'top right', 'bottom left', 'bottom middle', 'bottom right']
+export const SHOT_MESSAGES: Record<Exclude<ShotsResponse['status'], 'ok'>, string> = {
+  no_cue_ball: 'No white ball detected, so no shots to predict.',
+  multiple_cue_balls: 'More than one white ball detected, so no shots to predict.',
+  no_targets: 'No other balls on the table.',
+}
 export type Frame = { image: string; width: number; height: number; name: string; synthetic: boolean; lens_corrected?: boolean }
 export type LiveResponse = { table_status: 'searching' | 'detected'; calibration: Calibration | null; detection: Detection | null }
 export const DEFAULT_SETTINGS: Settings = { table_ratio: 2, ball_radius_ratio: 0.026, cloth_hue: null, hue_tolerance: 16, saturation_min: 55, split_touching: true }

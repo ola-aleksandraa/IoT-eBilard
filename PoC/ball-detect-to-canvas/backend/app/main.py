@@ -11,7 +11,8 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import ValidationError
 
 from .demo import demo_response
-from .models import Calibration, DetectionRequest, LensCalibration, LiveRequest
+from .models import Calibration, DetectionRequest, LensCalibration, LiveRequest, ShotsRequest
+from .trajectory import plan_shots
 from .vision import detect, image_url, suggest_corners
 
 MAX_UPLOAD_BYTES = 12 * 1024 * 1024
@@ -128,3 +129,14 @@ def live_frame(file: UploadFile = File(...), config: str = Form("{}")):
         raise HTTPException(422, str(exc)) from None
     finally:
         processing_slot.release()
+
+
+@app.post("/api/shots")
+def shots(request: ShotsRequest):
+    """Ghost-ball shot planning for detected balls.
+
+    Input/output use the same 0-1 table coordinates as /api/detect. Each shot has the cue-ball path,
+    target-ball path, cue-ball deflection after contact, ghost-ball position, score and block reason.
+    """
+    return plan_shots(request.balls, request.table_ratio, request.top_n,
+                      request.include_bank, request.include_blocked)

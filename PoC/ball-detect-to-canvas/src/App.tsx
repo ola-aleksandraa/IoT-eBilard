@@ -1,13 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDownToLine, Camera, Check, ChevronDown, CircleDot, Crosshair, ImagePlus, Loader2, RefreshCw, Settings2, Square, Video, X } from 'lucide-react'
 import TableCanvas from './TableCanvas'
 import SourceView from './SourceView'
 import { useCamera } from './useCamera'
 import { BallStabilizer, CornerConsensus } from './stability'
-import { api, BALL_COLORS, BALL_NAMES, DEFAULT_SETTINGS, downloadJSON, imageBlob } from './types'
-import type { Calibration, Detection, Frame, LiveResponse, Settings } from './types'
+import { api, BALL_COLORS, BALL_NAMES, DEFAULT_SETTINGS, downloadJSON, imageBlob, POCKET_NAMES, SHOT_MESSAGES } from './types'
+import type { Calibration, Detection, Frame, LiveResponse, Settings, Shot, ShotsResponse } from './types'
 
 const EMPTY_BALLS: Detection['balls'] = []
+const EMPTY_SHOTS: Shot[] = []
 
 export default function App() {
   const camera = useCamera()
@@ -32,6 +33,9 @@ export default function App() {
   const [updates, setUpdates] = useState(0)
   const [showIds, setShowIds] = useState(false)
   const [showGrid, setShowGrid] = useState(false)
+  const [showShots, setShowShots] = useState(false)
+  const [shotPlan, setShotPlan] = useState<ShotsResponse | null>(null)
+  const [activeShot, setActiveShot] = useState(0)
   const [dimensions, setDimensions] = useState({ width: 1280, height: 720 })
   const [saved, setSaved] = useState<Calibration | null>(() => {
     try {
@@ -47,6 +51,21 @@ export default function App() {
   const activeBall = balls.find(ball => ball.id === selected)
 
   useEffect(() => { if (settingsOpen) modal.current?.showModal(); else modal.current?.close() }, [settingsOpen])
+
+  // Shot predictions are recomputed only when the (stabilised) ball layout actually changes.
+  const ratio = result?.table.ratio ?? settings.table_ratio
+  const ballsKey = useMemo(() => JSON.stringify(balls.map(ball => [ball.id, ball.kind, +ball.x.toFixed(3), +ball.y.toFixed(3)])), [balls])
+  useEffect(() => {
+    if (!showShots || !balls.length) { setShotPlan(null); return }
+    const controller = new AbortController()
+    const timer = setTimeout(() => {
+      api<ShotsResponse>('/shots', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ balls, table_ratio: ratio, top_n: 5 }), signal: controller.signal })
+        .then(plan => { setShotPlan(plan); setActiveShot(index => Math.max(0, Math.min(index, plan.shots.length - 1))) })
+        .catch(() => { if (!controller.signal.aborted) setShotPlan(null) })
+    }, 250)
+    return () => { clearTimeout(timer); controller.abort() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showShots, ballsKey, ratio])
 
   // Sequential sampling, never a queue of stale frames. Camera/settings changes
   // and disconnect abort pending requests and prevent old responses rendering.
@@ -248,7 +267,9 @@ export default function App() {
             {busy && (isLive || frame) && <div className="processing-label"><Loader2 className="spin" size={14} /> Detecting…</div>}
           </div>
         </section>
-        <section className="view-panel"><div className="view-heading"><h2>Virtual table</h2><span className="view-caption">{result ? `${balls.length} BALL${balls.length === 1 ? '' : 'S'} DETECTED` : 'WAITING FOR A TABLE'}</span></div><div className="virtual-stage"><TableCanvas balls={balls} ratio={result?.table.ratio ?? settings.table_ratio} selected={selected} onSelect={setSelected} showLabels={showIds} showGrid={showGrid} /></div>{balls.length > 0 && <div className="ball-legend" aria-label="Ball types">{(['cue', 'eight', 'solid', 'striped', 'unknown'] as const).filter(kind => kind !== 'unknown' || balls.some(ball => ball.kind === kind)).map(kind => <span key={kind}><i className={`mini-ball ${kind}`} style={{ '--ball-color': BALL_COLORS[kind] } as React.CSSProperties} />{BALL_NAMES[kind]}</span>)}</div>}</section>
+        <section className="view-panel"><div className="view-heading"><h2>Virtual table</h2><span className="view-caption">{result ? `${balls.length} BALL${balls.length === 1 ? '' : 'S'} DETECTED` : 'WAITING FOR A TABLE'}</span></div><div className="virtual-stage"><TableCanvas balls={balls} ratio={ratio} selected={selected} onSelect={setSelected} showLabels={showIds} showGrid={showGrid} shots={shotPlan?.status === 'ok' ? shotPlan.shots : EMPTY_SHOTS} activeShot={activeShot} /></div>{showShots && shotPlan && (shotPlan.status === 'ok'
+          ? <div className="shot-list" aria-label="Predicted shots">{shotPlan.shots.length === 0 ? <span className="shot-note">No makeable shots found.</span> : shotPlan.shots.map((shot, index) => <button key={`${shot.target_ball_id}-${shot.pocket}-${shot.shot_type}`} className={`shot-chip ${index === activeShot ? 'active' : ''}`} onClick={() => setActiveShot(index)}>{index + 1}. {shot.shot_type === 'bank' ? 'Bank' : 'Direct'} · ball {shot.target_ball_id} → {POCKET_NAMES[shot.pocket]} · {Math.round(shot.score * 100)}%</button>)}</div>
+          : <div className="shot-list"><span className="shot-note">{SHOT_MESSAGES[shotPlan.status]}</span></div>)}{balls.length > 0 && <div className="ball-legend" aria-label="Ball types">{(['cue', 'eight', 'solid', 'striped', 'unknown'] as const).filter(kind => kind !== 'unknown' || balls.some(ball => ball.kind === kind)).map(kind => <span key={kind}><i className={`mini-ball ${kind}`} style={{ '--ball-color': BALL_COLORS[kind] } as React.CSSProperties} />{BALL_NAMES[kind]}</span>)}</div>}</section>
       </div>
       <div className="status-line" role="status"><span className={`status-dot ${isLive && result ? 'live' : ''}`} />{busy ? 'Finding the table and balls…' : camera.connecting ? 'Opening camera…' : status}{isLive && result && updates > 0 && <span className="update-rate">{updates.toFixed(1)} updates / sec</span>}</div>
       {editing && <div className="calibration-strip"><span>{manual?.corners.length ?? 0} / 4 corners · drag to adjust</span><button className="text-button" onClick={() => setManual(previous => previous ? { ...previous, corners: [] } : null)}>Reset corners</button><button className="text-button" disabled={manual?.corners.length !== 4} onClick={() => setManual(previous => previous ? { ...previous, corners: [...previous.corners.slice(1), previous.corners[0]] } : null)}>Rotate mapping</button><button className="primary-button" disabled={manual?.corners.length !== 4} onClick={applyCorners}><Check size={15} /> Use these corners</button><button className="icon-button" aria-label="Cancel calibration" onClick={() => { setEditing(false); setManual(null); if (isLive) setFrame(null) }}><X size={17} /></button></div>}
@@ -261,7 +282,7 @@ export default function App() {
       {manual && <button className="text-button auto-button" onClick={() => { setManual(null); setEditing(false); if (isLive) setFrame(null); else setResult(null); setCalibrationRevision(value => value + 1); setStatus('Automatic calibration enabled.') }}>Return to automatic calibration</button>}
       <div className="settings-button-row"><button className="text-button" disabled={!calibration} onClick={() => { if (!calibration) return; try { localStorage.setItem('live-table-calibration', JSON.stringify(calibration)); setSaved(calibration); setStatus('Corners saved for this camera position and resolution.') } catch { setError('Could not save calibration in this browser.') } }}>Save current corners</button><button className="text-button" disabled={!canReuse || !frame && !isLive} onClick={() => { if (saved) { setUnstableCamera(false); setManual(saved); setResult(null); setStatus('Saved corners applied. Keep the camera in the same position.') } }}>Use saved corners</button></div>
       </section>
-      <section className="settings-section"><h3>Detection</h3><label className="range-label"><span>Table proportions <strong>{settings.table_ratio.toFixed(2)} : 1</strong></span><input type="range" min="1" max="3" step="0.05" value={settings.table_ratio} onChange={event => changeSettings('table_ratio', Number(event.target.value))} /></label><label className="range-label"><span>Ball radius / table height <strong>{(settings.ball_radius_ratio * 100).toFixed(1)}%</strong></span><input type="range" min="0.012" max="0.06" step="0.001" value={settings.ball_radius_ratio} onChange={event => changeSettings('ball_radius_ratio', Number(event.target.value))} /></label><label className="range-label"><span>Cloth hue tolerance <strong>±{settings.hue_tolerance}</strong></span><input type="range" min="3" max="40" value={settings.hue_tolerance} onChange={event => changeSettings('hue_tolerance', Number(event.target.value))} /></label><label className="range-label"><span>Stationary-ball tolerance <strong>{(jitterTolerance * 100).toFixed(1)}% of table height</strong></span><input type="range" min="0.002" max="0.015" step="0.001" value={jitterTolerance} onChange={event => setJitterTolerance(Number(event.target.value))} /></label><label className="checkbox-label"><input type="checkbox" checked={settings.split_touching} onChange={event => changeSettings('split_touching', event.target.checked)} /> Separate touching balls</label><label className="checkbox-label"><input type="checkbox" checked={showIds} onChange={event => setShowIds(event.target.checked)} /> Show ball IDs</label><label className="checkbox-label"><input type="checkbox" checked={showGrid} onChange={event => setShowGrid(event.target.checked)} /> Show table grid</label>
+      <section className="settings-section"><h3>Detection</h3><label className="range-label"><span>Table proportions <strong>{settings.table_ratio.toFixed(2)} : 1</strong></span><input type="range" min="1" max="3" step="0.05" value={settings.table_ratio} onChange={event => changeSettings('table_ratio', Number(event.target.value))} /></label><label className="range-label"><span>Ball radius / table height <strong>{(settings.ball_radius_ratio * 100).toFixed(1)}%</strong></span><input type="range" min="0.012" max="0.06" step="0.001" value={settings.ball_radius_ratio} onChange={event => changeSettings('ball_radius_ratio', Number(event.target.value))} /></label><label className="range-label"><span>Cloth hue tolerance <strong>±{settings.hue_tolerance}</strong></span><input type="range" min="3" max="40" value={settings.hue_tolerance} onChange={event => changeSettings('hue_tolerance', Number(event.target.value))} /></label><label className="range-label"><span>Stationary-ball tolerance <strong>{(jitterTolerance * 100).toFixed(1)}% of table height</strong></span><input type="range" min="0.002" max="0.015" step="0.001" value={jitterTolerance} onChange={event => setJitterTolerance(Number(event.target.value))} /></label><label className="checkbox-label"><input type="checkbox" checked={settings.split_touching} onChange={event => changeSettings('split_touching', event.target.checked)} /> Separate touching balls</label><label className="checkbox-label"><input type="checkbox" checked={showIds} onChange={event => setShowIds(event.target.checked)} /> Show ball IDs</label><label className="checkbox-label"><input type="checkbox" checked={showGrid} onChange={event => setShowGrid(event.target.checked)} /> Show table grid</label><label className="checkbox-label"><input type="checkbox" checked={showShots} onChange={event => setShowShots(event.target.checked)} /> Show shot predictions</label>
       {frame && !isLive && <button className="secondary-button" disabled={busy || editing} onClick={async () => { setBusy(true); setError(''); try { await detectStill(frame, manual) } catch (reason) { setError((reason as Error).message) } finally { setBusy(false) } }}>Apply to image</button>}
       </section>
       <section className="settings-section"><h3>Test & export</h3><div className="settings-button-row"><button className="secondary-button" disabled={busy || camera.connecting} onClick={() => { setSettingsOpen(false); void sample() }}><ImagePlus size={14} /> Try sample</button><button className="secondary-button" disabled={busy || camera.connecting} onClick={() => fileInput.current?.click()}><ImagePlus size={14} /> Upload photo</button><button className="secondary-button" disabled={!result} onClick={() => result && downloadJSON({ ...result, images: undefined, calibration, settings, synthetic: frame?.synthetic ?? false, captured_at: new Date().toISOString() }, 'table-layout.json')}><ArrowDownToLine size={14} /> Export layout</button></div><p className="limitations">Balls are shown as white, black, full, half, or unknown. Individual colors are ignored. Hidden stripes and occlusion can be ambiguous. Coordinates use the cloth plane, so angled cameras introduce parallax. Fixed-camera mode suppresses small position changes and brief detection dropouts. Session labels are approximate associations, not guaranteed ball identities.</p></section>

@@ -4,9 +4,9 @@ Synchronized with TableStaticGeometry and TrackedBall.
 """
 
 import numpy as np
-from geometry import dist, point_to_segment_distance
-from trajectory import ShotResult
-from app.config import settings
+from .geometry import dist, point_to_segment_distance
+from .trajectory import ShotResult
+from .config import settings
 
 
 def clamp01(x):

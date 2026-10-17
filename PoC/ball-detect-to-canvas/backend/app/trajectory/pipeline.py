@@ -1,12 +1,6 @@
-import os
-import sys
-
-sys.path.insert(
-    0,
-    os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..")
-    )
-)
+import logging
+import time
+from contextlib import contextmanager
 
 from .trajectory import find_all_shots
 from .shot_scoring import (
@@ -15,15 +9,24 @@ from .shot_scoring import (
     get_best_shot_per_ball,
 )
 
-from shared.types import (
+from .table_types import (
     BilliardSceneState,
     TableStaticGeometry,
     TrajectoryResult,
 )
 
-from shared.logger import logger
-from shared.timer import timer
-from app.config import settings
+from .config import settings
+
+logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def timer(label: str):
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        logger.debug("%s took %.1f ms", label, (time.perf_counter() - start) * 1000)
 
 
 def compute_trajectories(

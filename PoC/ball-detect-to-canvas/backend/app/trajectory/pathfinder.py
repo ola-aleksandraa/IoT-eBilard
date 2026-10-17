@@ -1,7 +1,7 @@
 import numpy as np
 from dataclasses import dataclass
 from typing import Optional
-from geometry import mirror_point, line_intersection, normalize
+from .geometry import mirror_point, line_intersection, normalize
 
 
 @dataclass

@@ -1,8 +1,11 @@
 import { useEffect, useRef } from 'react'
-import { BALL_COLORS, type Ball } from './types'
+import { BALL_COLORS, type Ball, type Shot } from './types'
 
-export default function TableCanvas({ balls, ratio, selected, onSelect, showLabels, showGrid }: {
+const NO_SHOTS: Shot[] = []
+
+export default function TableCanvas({ balls, ratio, selected, onSelect, showLabels, showGrid, shots = NO_SHOTS, activeShot = 0 }: {
   balls: Ball[]; ratio: number; selected: number | null; onSelect: (id: number | null) => void; showLabels: boolean; showGrid: boolean;
+  shots?: Shot[]; activeShot?: number;
 }) {
   const ref = useRef<HTMLCanvasElement>(null)
   const geometry = useRef({ x: 0, y: 0, w: 1, h: 1 })
@@ -43,6 +46,25 @@ export default function TableCanvas({ balls, ratio, selected, onSelect, showLabe
       }
       ctx.font = '10px ui-monospace, monospace'; ctx.fillStyle = '#7b8b86'
       ctx.fillText('0, 0', x - 8, y - 28); ctx.textAlign = 'right'; ctx.fillText('1, 1', x + w + 7, y + h + 34); ctx.textAlign = 'left'
+      const cueRadius = (balls.find(ball => ball.kind === 'cue')?.radius ?? 0.026) * h
+      shots.forEach((shot, index) => {
+        const active = index === activeShot
+        const at = (p: [number, number]) => [x + p[0] * w, y + p[1] * h] as const
+        const line = (path: [number, number][], color: string, width: number, dash: number[] = []) => {
+          if (path.length < 2) return
+          ctx.beginPath(); path.forEach((p, i) => { const [px, py] = at(p); if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py) })
+          ctx.setLineDash(dash); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.stroke(); ctx.setLineDash([])
+        }
+        ctx.save(); ctx.globalAlpha = active ? 0.95 : 0.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+        line(shot.target_path, '#ffd166', active ? 2.5 : 1.5)
+        line(shot.cue_path, '#ffffff', active ? 2.5 : 1.5)
+        if (active) line(shot.cue_deflect_path, '#ffffff', 1.5, [5, 5])
+        if (shot.ghost_pos) {
+          const [gx, gy] = at(shot.ghost_pos)
+          ctx.beginPath(); ctx.arc(gx, gy, Math.max(4, cueRadius), 0, Math.PI * 2); ctx.setLineDash([3, 3]); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([])
+        }
+        ctx.restore()
+      })
       for (const ball of balls) {
         const bx = x + ball.x * w, by = y + ball.y * h, r = Math.max(4, ball.radius * h)
         ctx.save()
@@ -65,7 +87,7 @@ export default function TableCanvas({ balls, ratio, selected, onSelect, showLabe
     }
     const observer = new ResizeObserver(render); observer.observe(canvas); render()
     return () => observer.disconnect()
-  }, [balls, ratio, selected, showLabels, showGrid])
+  }, [balls, ratio, selected, showLabels, showGrid, shots, activeShot])
   return <canvas ref={ref} tabIndex={0} aria-label={`Virtual table with ${balls.length} detected balls. Use arrow keys to inspect balls; Escape clears selection.`} onKeyDown={event => {
     if (event.key === 'Escape') onSelect(null)
     if (['ArrowLeft', 'ArrowRight'].includes(event.key) && balls.length) {

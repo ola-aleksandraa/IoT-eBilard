@@ -1,4 +1,4 @@
-from types import SimpleNamespace
+from table_types import SimpleNamespace
 
 settings = SimpleNamespace(
     module3_physics=SimpleNamespace(
@@ -10,11 +10,11 @@ settings = SimpleNamespace(
         ),
         physics=SimpleNamespace(
             max_cut_angle_deg=85.0,
-            initial_velocity=2000.0,
+            initial_velocity=1.0,
             friction_coeff=0.0005,
             cushion_restitution=0.65,
             bank_offset_angle_deg=2.0,
-            min_velocity=10.0
+            min_velocity=0.005
         ),
         trajectory_validation=SimpleNamespace(
             clearance_margin=1.0,

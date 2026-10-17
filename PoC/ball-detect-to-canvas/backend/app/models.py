@@ -79,3 +79,21 @@ class Ball(StrictModel):
     reason: str
     white_fraction: float
     method: str
+
+
+class ShotBall(BaseModel):
+    """A detected ball as sent by the frontend. Extra detection fields are ignored."""
+    model_config = ConfigDict(extra="ignore", allow_inf_nan=False)
+    id: int
+    kind: Literal["cue", "eight", "solid", "striped", "unknown"]
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    radius: float = Field(gt=0, le=0.2)
+
+
+class ShotsRequest(StrictModel):
+    balls: list[ShotBall] = Field(max_length=24)
+    table_ratio: float = Field(default=2, ge=1, le=3)
+    top_n: int = Field(default=5, ge=1, le=20)
+    include_bank: bool = True
+    include_blocked: bool = False

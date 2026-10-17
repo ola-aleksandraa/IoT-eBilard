@@ -3,11 +3,11 @@ trajectory_validator.py — Check for collisions along a trajectory (Validation)
 """
 
 import numpy as np
-from geometry import (
+from .geometry import (
     normalize, point_to_segment_distance, ball_blocks_segment,
     segment_to_segment_distance, ray_segment_intersection
 )
-from config import settings
+from .config import settings
 
 
 def is_path_blocked(seg_p1, seg_p2, balls, ball_radius, exclude_indices=()):

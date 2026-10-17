@@ -1,12 +1,12 @@
 import numpy as np
 import cv2
-from geometry import (
+from .geometry import (
     normalize, dist, vec, dot,
     perpendicular_ccw, perpendicular_cw,
     angle_deg, length
 )
 
-from config import settings
+from .config import settings
 
 
 def compute_remaining_velocity(
@@ -82,4 +82,24 @@ def compute_collision(cue_pos, target_pos, pocket_pos, ball_radius, table_layout
     result.contact_dir = contact_dir
     result.target_exit_dir = contact_dir
 
-    deflect_dir, cut_angle = compute_cue_deflection
+    deflect_dir, cut_angle = compute_cue_deflection(cue, ghost_pos, contact_dir)
+    result.cue_deflect_dir = deflect_dir
+    result.cut_angle = cut_angle
+
+    if table_layout is not None:
+        pts = np.int32(table_layout.corners).reshape((-1, 1, 2))
+        in_bounds = cv2.pointPolygonTest(pts, (float(ghost_pos[0]), float(ghost_pos[1])), False) >= 0
+    else:
+        in_bounds = True
+        
+    angle_ok  = abs(cut_angle) <= phys_cfg.max_cut_angle_deg
+    result.is_valid = in_bounds and angle_ok
+
+    return result
+
+def cut_angle_difficulty(cut_angle_deg):
+    max_angle = settings.module3_physics.physics.max_cut_angle_deg
+    angle = abs(cut_angle_deg)
+    if angle >= max_angle:
+        return 1.0
+    return angle / max_angle

@@ -4,11 +4,11 @@ Acts as the Orchestrator.
 """
 
 import numpy as np
-from geometry import dist
-from collision import compute_collision, compute_remaining_velocity
-from pathfinder import generate_direct_paths, generate_bank_paths
-from trajectory_validator import is_path_blocked, is_cutting_cushion, trace_to_cushion
-from config import settings
+from .geometry import dist
+from .collision import compute_collision, compute_remaining_velocity
+from .pathfinder import generate_direct_paths, generate_bank_paths
+from .trajectory_validator import is_path_blocked, is_cutting_cushion, trace_to_cushion
+from .config import settings
 
 
 # ─────────────────────────────────────────────────────────────
