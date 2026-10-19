@@ -1,4 +1,4 @@
-from table_types import SimpleNamespace
+from types import SimpleNamespace
 
 settings = SimpleNamespace(
     module3_physics=SimpleNamespace(

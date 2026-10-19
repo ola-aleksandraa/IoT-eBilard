@@ -27,10 +27,24 @@ export type Shot = {
 }
 export type ShotsResponse = { status: 'ok' | 'no_cue_ball' | 'multiple_cue_balls' | 'no_targets'; cue_ball_id: number | null; shots: Shot[]; blocked: Shot[] }
 export const POCKET_NAMES = ['top left', 'top middle', 'top right', 'bottom left', 'bottom middle', 'bottom right']
-export const SHOT_MESSAGES: Record<Exclude<ShotsResponse['status'], 'ok'>, string> = {
+export const SHOT_MESSAGES: Record<Exclude<ShotsResponse['status'], 'ok'> | 'invalid_aim', string> = {
   no_cue_ball: 'No white ball detected, so no shots to predict.',
   multiple_cue_balls: 'More than one white ball detected, so no shots to predict.',
   no_targets: 'No other balls on the table.',
+  invalid_aim: 'Aim point is inside the white ball.',
+}
+// Live cue-stick prediction: full physics roll-out (motion, not just pocket lines).
+export type MotionEvent = {
+  t: number; type: 'contact' | 'cushion' | 'pot'; ball: number; with?: number; pocket?: number
+  x?: number; y?: number; cut_angle?: number
+}
+export type MotionBall = { id: number; path: [number, number][]; potted_t: number | null }
+export type MotionPrediction = {
+  status: 'ok' | 'no_cue_ball' | 'multiple_cue_balls' | 'no_targets' | 'invalid_aim'
+  cue_ball_id: number | null; first_ball_id: number | null
+  ghost_pos: [number, number] | null; cut_angle: number | null
+  power: number; duration: number; dt: number
+  balls: MotionBall[]; events: MotionEvent[]; potted: number[]
 }
 export type Frame = { image: string; width: number; height: number; name: string; synthetic: boolean; lens_corrected?: boolean }
 export type LiveResponse = { table_status: 'searching' | 'detected'; calibration: Calibration | null; detection: Detection | null }

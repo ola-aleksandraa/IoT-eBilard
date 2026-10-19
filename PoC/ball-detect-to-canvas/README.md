@@ -69,6 +69,9 @@ Select a ball on the canvas to inspect its type and coordinates. Keyboard users 
 | `POST /api/live` | Multipart `file`, optional JSON `config` | `table_status`, detected calibration, detection or `null` |
 | `POST /api/prepare` | Multipart `file`, optional JSON `lens` | Canonical PNG, dimensions, suggested corners, lens status |
 | `POST /api/detect` | Multipart `file`, JSON `config` with calibration | Detection plus rectified, mask, and overlay images |
+| `POST /api/shots` | JSON `balls`, `table_ratio`, `top_n` | Ranked direct/bank shots with paths and scores |
+| `POST /api/shots/predict` | JSON `balls`, `table_ratio`, `aim_x/aim_y` | Ghost-ball preview of one aim: pocket, cut angle, paths |
+| `POST /api/shots/simulate` | JSON `balls`, `table_ratio`, `aim_x/aim_y`, `power` | Full physics roll-out: per-ball motion paths, events, pots |
 
 `/api/live` finds table corners when `calibration` is omitted/null. A lost table returns `{"table_status":"searching","calibration":null,"detection":null}`. The endpoint is stateless and never reuses a prior layout. Live responses omit debug images to reduce transfer and encoding overhead.
 
@@ -140,7 +143,7 @@ cd backend
 uv run pytest -q
 ```
 
-- Backend tests: ground-truth localization under brightness changes, cue/pocket rejection, touching separation independently of Hough, classification/unknown rules, hue wraparound, inverse mapping, malformed input, EXIF/lens handling, and automatic table loss/reacquisition.
+- Backend tests: ground-truth localization under brightness changes, cue/pocket rejection, touching separation independently of Hough, classification/unknown rules, hue wraparound, inverse mapping, malformed input, EXIF/lens handling, automatic table loss/reacquisition, and the trajectory engine (planner, single-aim prediction, physics motion simulation: contacts, cushion hits, pots, statuses, validation).
 - Frontend tests: mocked camera lifecycle, cancellation, sequential requests, corner consensus/outlier rejection, fixed lock and recalibration, unstable mode, stationary jitter, real motion, dropouts, and type hysteresis.
 - Camera lifecycle tests use simulated media devices; they do not access your physical camera. The mounted camera still needs its own validation.
 
@@ -183,7 +186,7 @@ Limitations:
 - Lighting, reflections, hands, deep shadows, cloth-colored balls, and motion blur can cause misses or false positives.
 - Touching separation is best effort. Fully occluded balls cannot be reconstructed reliably from a single view.
 - An invisible stripe can make a stripe ball look solid. “Unknown” handles visible ambiguity but cannot reveal hidden evidence.
-- The backend is stateless. Fixed-camera frontend filtering reduces display jitter and brief dropouts, but does not detect shot completion, compensate camera motion, read ball numbers, or track ball motion. Shot *planning* (not motion tracking) is available through `POST /api/shots`, see below. A falsely detected position can persist briefly; a wrong but consistent corner estimate can still lock. Recalibrate or set corners manually when needed.
+- The backend is stateless. Fixed-camera frontend filtering reduces display jitter and brief dropouts, but does not detect shot completion, compensate camera motion, read ball numbers, or track ball motion. Shot *planning* and motion *prediction* (not motion tracking) are available through `POST /api/shots` and the live-aim endpoints described below. A falsely detected position can persist briefly; a wrong but consistent corner estimate can still lock. Recalibrate or set corners manually when needed.
 
 For a fixed installation, consistent exposure, a tighter table crop, and enough pixels per ball are more useful than forcing uncertain classifications.
 
@@ -198,4 +201,30 @@ For a fixed installation, consistent exposure, a tighter table crop, and enough 
 
 and returns ranked direct and one-cushion bank shots with `cue_path`, `target_path`, `cue_deflect_path` (white ball after contact), `ghost_pos`, `score`, `cut_angle` and `velocity_remaining` (0-1). Enable **Show shot predictions** in Settings to draw them on the virtual table. The engine works in pixels on a table 1000 px wide (`service.ENGINE_WIDTH`); physics constants live in `app/trajectory/config.py`.
 
-Scope: this plans where to aim and where the white ball goes after contact. It does not read the cue stick direction and has no spin or throw model.
+Scope: this plans where to aim and where the white ball goes after contact. It reads the pocket line for a *known* aim, but on its own has no cue-stick source and no spin or throw model.
+
+## Live aim and motion prediction
+
+Two endpoints take a cue-stick direction as `aim_x/aim_y` — 0-1 table coordinates the cue ball travels toward — so any source can drive them: manual aiming, a vision-based cue detector, or an external sensor.
+
+`POST /api/shots/predict` answers *"where does this aim go?"* for a single direction: first ball on the line, ghost-ball contact point, cut angle, best pocket, whether the shot is makeable, and the pre- and post-contact paths. A miss returns a straight aim line to the cushion instead of forced geometry.
+
+`POST /api/shots/simulate` goes one step further and answers *"how will the balls actually move?"*. It rolls the shot out with 2-D physics — rolling friction, elastic ball-to-ball collisions, cushion restitution, and pocket capture through the pocket mouth. `power` (0-1) sets the cue-ball speed. The response contains:
+
+- `balls`: every detected ball's time-sampled position path (`dt` seconds between samples); `potted_t` is the drop time, or `null` if the ball stays on the table.
+- `events`: an ordered timeline of `contact` (with cut angle), `cushion`, and `pot` events with times and positions.
+- `potted`, `first_ball_id`, `ghost_pos`, `cut_angle`, and `duration`.
+
+```sh
+curl http://127.0.0.1:8000/api/shots/simulate \
+  -H 'Content-Type: application/json' \
+  -d '{"balls":[{"id":0,"kind":"cue","x":0.25,"y":0.3,"radius":0.026},
+       {"id":1,"kind":"solid","x":0.5,"y":0.6,"radius":0.026}],
+       "table_ratio":2.0,"aim_x":0.9,"aim_y":0.9,"power":0.8}'
+```
+
+A full 12-ball roll-out finishes in well under 100 ms, so the endpoint can run live while aiming.
+
+In the UI, enable **Aim cue** below the virtual table and drag anywhere on the canvas: the drag length from the white ball sets the power, and the table plays the predicted motion in real time — the cue trail, balls rolling to their final resting positions, balls disappearing as they drop into a pocket, and a summary line (first contact time and cut angle, potted balls with pocket names, cushion count). Statuses mirror the planner: `no_cue_ball`, `multiple_cue_balls`, `no_targets`, `invalid_aim` (aim too close to the cue ball). The final resting layout stays on screen until the aim changes.
+
+Scope: the simulation is idealized — no spin, throw, swerve, or jump, balls are pure sliding-free rollers, cushions reflect around the cloth boundary, and pocket geometry is a capture radius rather than modeled jaws. It is a fast, readable prediction of real motion, not a training-grade pool-physics engine. The backend has no built-in cue-stick detection: `aim_x/aim_y` must come from the UI drag or your own vision/sensor integration (`backend/app/vision.py` is the natural attachment point).

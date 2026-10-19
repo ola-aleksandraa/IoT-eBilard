@@ -5,7 +5,7 @@ import SourceView from './SourceView'
 import { useCamera } from './useCamera'
 import { BallStabilizer, CornerConsensus } from './stability'
 import { api, BALL_COLORS, BALL_NAMES, DEFAULT_SETTINGS, downloadJSON, imageBlob, POCKET_NAMES, SHOT_MESSAGES } from './types'
-import type { Calibration, Detection, Frame, LiveResponse, Settings, Shot, ShotsResponse } from './types'
+import type { Calibration, Detection, Frame, LiveResponse, MotionPrediction, Point, Settings, Shot, ShotsResponse } from './types'
 
 const EMPTY_BALLS: Detection['balls'] = []
 const EMPTY_SHOTS: Shot[] = []
@@ -36,6 +36,10 @@ export default function App() {
   const [showShots, setShowShots] = useState(false)
   const [shotPlan, setShotPlan] = useState<ShotsResponse | null>(null)
   const [activeShot, setActiveShot] = useState(0)
+  const [aimMode, setAimMode] = useState(false)
+  const [aim, setAim] = useState<Point | null>(null)
+  const [motion, setMotion] = useState<MotionPrediction | null>(null)
+  const [motionElapsed, setMotionElapsed] = useState(0)
   const [dimensions, setDimensions] = useState({ width: 1280, height: 720 })
   const [saved, setSaved] = useState<Calibration | null>(() => {
     try {
@@ -66,6 +70,57 @@ export default function App() {
     return () => { clearTimeout(timer); controller.abort() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showShots, ballsKey, ratio])
+
+  // Cue-stick aim: re-run the physics roll-out while the aim point (or layout) moves,
+  // then play the resulting ball motion in real time.
+  const aimKey = aim ? `${aim.x.toFixed(3)}:${aim.y.toFixed(3)}` : ''
+  const cueBall = balls.find(ball => ball.kind === 'cue')
+  useEffect(() => {
+    if (!aimMode || !aim || !cueBall) { setMotion(null); setMotionElapsed(0); return }
+    const controller = new AbortController()
+    const timer = setTimeout(() => {
+      // Power (0-1) comes from the aiming drag distance, like drawing back the cue.
+      const drag = Math.hypot((aim.x - cueBall.x) * ratio, aim.y - cueBall.y)
+      api<MotionPrediction>('/shots/simulate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+        body: JSON.stringify({ balls, table_ratio: ratio, aim_x: aim.x, aim_y: aim.y, power: Math.min(1, drag / 0.85) }),
+      }).then(roll => { setMotion(roll); setMotionElapsed(0) }).catch(() => { if (!controller.signal.aborted) setMotion(null) })
+    }, 90)
+    return () => { clearTimeout(timer); controller.abort() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aimMode, aimKey, ballsKey, ratio])
+
+  // Animate the predicted motion at 1× real time; the final resting layout stays on screen.
+  useEffect(() => {
+    if (!motion || motion.status !== 'ok' || motion.duration <= 0) { setMotionElapsed(0); return }
+    let raf = 0
+    const started = performance.now()
+    const tick = (now: number) => {
+      const t = (now - started) / 1000
+      setMotionElapsed(t < motion.duration ? t : motion.duration)
+      if (t < motion.duration) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [motion])
+
+  function motionNote(p: MotionPrediction | null): string {
+    if (!p) return 'Drag on the table to aim the cue.'
+    if (p.status !== 'ok') return SHOT_MESSAGES[p.status] ?? 'Aim the cue from the white ball.'
+    if (p.first_ball_id === null) return 'No ball on the aim line · nothing will be pocketed.'
+    const contact = p.events.find(event => event.type === 'contact' && event.with === p.cue_ball_id)
+    const pots = p.events.filter(event => event.type === 'pot')
+    const cushions = p.events.filter(event => event.type === 'cushion').length
+    const hit = contact ? `hit at ${contact.t.toFixed(2)} s, cut ${Math.round(contact.cut_angle ?? 0)}°` : 'hit'
+    const potted = pots.length
+      ? ` · potted: ${pots.map(event => `ball ${event.ball} → ${POCKET_NAMES[event.pocket ?? 0]}`).join(', ')}`
+      : ' · nothing potted'
+    return `Ball ${p.first_ball_id} ${hit}${potted} · ${cushions} cushion${cushions === 1 ? '' : 's'}`
+  }
+
+  function toggleAim() {
+    setAimMode(previous => !previous); setAim(null); setMotion(null); setMotionElapsed(0)
+  }
 
   // Sequential sampling, never a queue of stale frames. Camera/settings changes
   // and disconnect abort pending requests and prevent old responses rendering.
@@ -267,7 +322,7 @@ export default function App() {
             {busy && (isLive || frame) && <div className="processing-label"><Loader2 className="spin" size={14} /> Detecting…</div>}
           </div>
         </section>
-        <section className="view-panel"><div className="view-heading"><h2>Virtual table</h2><span className="view-caption">{result ? `${balls.length} BALL${balls.length === 1 ? '' : 'S'} DETECTED` : 'WAITING FOR A TABLE'}</span></div><div className="virtual-stage"><TableCanvas balls={balls} ratio={ratio} selected={selected} onSelect={setSelected} showLabels={showIds} showGrid={showGrid} shots={shotPlan?.status === 'ok' ? shotPlan.shots : EMPTY_SHOTS} activeShot={activeShot} /></div>{showShots && shotPlan && (shotPlan.status === 'ok'
+        <section className="view-panel"><div className="view-heading"><h2>Virtual table</h2><span className="view-caption">{result ? `${balls.length} BALL${balls.length === 1 ? '' : 'S'} DETECTED` : 'WAITING FOR A TABLE'}</span></div><div className="virtual-stage"><TableCanvas balls={balls} ratio={ratio} selected={selected} onSelect={setSelected} showLabels={showIds} showGrid={showGrid} shots={shotPlan?.status === 'ok' ? shotPlan.shots : EMPTY_SHOTS} activeShot={activeShot} aimMode={aimMode} aim={aim} motion={motion} motionElapsed={motionElapsed} onAim={point => setAim(point)} /></div>{balls.length > 0 && <div className="aim-row"><button className={`aim-toggle ${aimMode ? 'active' : ''}`} aria-pressed={aimMode} onClick={toggleAim}><Crosshair size={13} /> {aimMode ? 'Aim cue: on' : 'Aim cue'}</button>{aimMode && <span className="shot-note" aria-label="Cue prediction" role="status">{motionNote(motion)}</span>}</div>}{showShots && shotPlan && (shotPlan.status === 'ok'
           ? <div className="shot-list" aria-label="Predicted shots">{shotPlan.shots.length === 0 ? <span className="shot-note">No makeable shots found.</span> : shotPlan.shots.map((shot, index) => <button key={`${shot.target_ball_id}-${shot.pocket}-${shot.shot_type}`} className={`shot-chip ${index === activeShot ? 'active' : ''}`} onClick={() => setActiveShot(index)}>{index + 1}. {shot.shot_type === 'bank' ? 'Bank' : 'Direct'} · ball {shot.target_ball_id} → {POCKET_NAMES[shot.pocket]} · {Math.round(shot.score * 100)}%</button>)}</div>
           : <div className="shot-list"><span className="shot-note">{SHOT_MESSAGES[shotPlan.status]}</span></div>)}{balls.length > 0 && <div className="ball-legend" aria-label="Ball types">{(['cue', 'eight', 'solid', 'striped', 'unknown'] as const).filter(kind => kind !== 'unknown' || balls.some(ball => ball.kind === kind)).map(kind => <span key={kind}><i className={`mini-ball ${kind}`} style={{ '--ball-color': BALL_COLORS[kind] } as React.CSSProperties} />{BALL_NAMES[kind]}</span>)}</div>}</section>
       </div>

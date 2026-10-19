@@ -97,3 +97,20 @@ class ShotsRequest(StrictModel):
     top_n: int = Field(default=5, ge=1, le=20)
     include_bank: bool = True
     include_blocked: bool = False
+
+
+class PredictRequest(StrictModel):
+    """One cue-stick aim: the cue ball travels toward `aim_x/aim_y` on the table plane."""
+    balls: list[ShotBall] = Field(max_length=24)
+    table_ratio: float = Field(default=2, ge=1, le=3)
+    aim_x: float = Field(ge=0, le=1)
+    aim_y: float = Field(ge=0, le=1)
+
+
+class SimulateRequest(StrictModel):
+    """One cue-stick aim rolled out with real 2-D physics (motion prediction)."""
+    balls: list[ShotBall] = Field(max_length=24)
+    table_ratio: float = Field(default=2, ge=1, le=3)
+    aim_x: float = Field(ge=0, le=1)
+    aim_y: float = Field(ge=0, le=1)
+    power: float = Field(default=0.6, ge=0, le=1)
