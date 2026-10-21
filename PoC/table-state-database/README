@@ -1,0 +1,73 @@
+# Bilard Table State API
+
+All lengths are in **cm**. A location is `(width, length)`, measured from a fixed table corner: width across the table, length along it.
+
+## Database model
+```mermaid
+erDiagram
+    table_state ||--o{ ball : contains
+
+    table_state {
+        CHAR(32) state_id PK "UUID"
+        DATETIME captured_at
+        INT ball_count "server-computed"
+        FLOAT table_width_cm "> 0"
+        FLOAT table_length_cm "> 0"
+        VARCHAR(512) image_ref "nullable"
+    }
+    ball {
+        CHAR(32) ball_id PK "UUID"
+        CHAR(32) state_id FK "indexed, ON DELETE CASCADE"
+        ENUM ball_type "FULL, HALF, WHITE"
+        FLOAT location_width_cm ">= 0"
+        FLOAT location_length_cm ">= 0"
+    }
+```
+
+## API
+
+| Call | In | Out |
+|---|---|---|
+| `POST /states` | `table_width_cm`, `table_length_cm`, optional `image_ref`, optional `captured_at`, `balls[]` | `201` + full state |
+| `GET /states?limit=&offset=` | optional paging | list of summaries (`state_id`, `captured_at`, `ball_count`, `image_ref`), newest first |
+| `GET /states/latest` | – | full state (`404` if none stored) |
+| `GET /states/{state_id}` | – | full state (`404` if unknown) |
+| `PUT /states/{state_id}/balls` | `balls[]` (replaces all balls) | full state with updated `ball_count` |
+| `DELETE /states/{state_id}` | – | `204` (balls are deleted with it) |
+
+**Ball** (in): `ball_type` (`FULL` \| `HALF` \| `WHITE`), `location_width_cm`, `location_length_cm`. Responses add `ball_id`.
+
+**Full state** (out): `state_id`, `captured_at`, `ball_count`, `table_width_cm`, `table_length_cm`, `image_ref`, `balls[]`. `ball_count` is set by the server.
+
+Invalid input returns `422`: more than one `WHITE` ball, or a ball outside the table.
+
+```bash
+curl -X POST http://localhost:8000/states -H "Content-Type: application/json" \
+  -d '{"table_width_cm":127,"table_length_cm":254,
+       "balls":[{"ball_type":"WHITE","location_width_cm":63.5,"location_length_cm":60}]}'
+```
+
+## Technologies
+
+- Python 3.12
+- FastAPI + uvicorn (REST API)
+- SQLAlchemy 2.0 (ORM)
+- Pydantic v2 (request/response validation)
+- MySQL 8 via PyMySQL
+- systemd (service management)
+- Ubuntu 24.04 (VM or WSL2)
+
+## Setup (Ubuntu 24.04 VM / WSL2)
+
+```bash
+sudo sh deploy/setup-ubuntu.sh
+```
+
+What it does:
+1. Installs Python, venv support and MySQL with `apt`.
+2. Creates the `bilard` database and a MySQL user with a random password.
+3. Creates a `bilard` system user, copies the app to `/opt/bilard` and installs the dependencies into a venv.
+4. Writes the configuration to `/etc/bilard/bilard.env` (`DATABASE_URL`, `LISTEN_HOST`, `LISTEN_PORT`).
+5. Installs and starts the `bilard-api` systemd service, enabled at boot.
+
+The API listens on `127.0.0.1:8000` by default; set `LISTEN_HOST=0.0.0.0` in `/etc/bilard/bilard.env` and restart the service to expose it.

@@ -1,0 +1,23 @@
+[Unit]
+Description=Bilard table state API (FastAPI + uvicorn)
+After=network.target mysql.service
+Wants=mysql.service
+
+[Service]
+Type=simple
+User=bilard
+Group=bilard
+WorkingDirectory=/opt/bilard
+EnvironmentFile=/etc/bilard/bilard.env
+ExecStart=/opt/bilard/venv/bin/uvicorn bilard_api.main:app --host ${LISTEN_HOST} --port ${LISTEN_PORT}
+Restart=on-failure
+RestartSec=3
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
