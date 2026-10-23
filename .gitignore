@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.DS_Store
+.env
+.ruff_cache/
+backend/evaluation-output/
+node_modules/
+dist/
+*.tsbuildinfo
