@@ -1,0 +1,13 @@
+# Modern macOS/Linux development runtime, exercised with Python 3.12.
+# Debian 10 / Python 3.7 deployment dependencies remain in pyproject.toml.
+fastapi==0.103.2
+pydantic==1.10.26
+starlette==0.27.0
+anyio==3.7.1
+uvicorn==0.54.0
+python-multipart==0.0.32
+numpy==2.2.6
+pillow==13.0.0
+opencv-python-headless==4.11.0.86
+pytest==9.1.1
+httpx==0.24.1

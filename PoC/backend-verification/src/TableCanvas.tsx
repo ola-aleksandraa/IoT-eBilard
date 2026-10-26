@@ -1,8 +1,12 @@
 import { useEffect, useRef } from 'react'
-import { BALL_COLORS, type Ball } from './types'
+import { BALL_COLORS, type Ball, type MotionPrediction, type Point, type Shot } from './types'
 
-export default function TableCanvas({ balls, ratio, selected, onSelect, showLabels, showGrid }: {
+const NO_SHOTS: Shot[] = []
+
+export default function TableCanvas({ balls, ratio, selected, onSelect, showLabels, showGrid, shots = NO_SHOTS, activeShot = 0, aimMode = false, aim = null, motion = null, motionElapsed = 0, onAim }: {
   balls: Ball[]; ratio: number; selected: number | null; onSelect: (id: number | null) => void; showLabels: boolean; showGrid: boolean;
+  shots?: Shot[]; activeShot?: number;
+  aimMode?: boolean; aim?: Point | null; motion?: MotionPrediction | null; motionElapsed?: number; onAim?: (point: Point) => void;
 }) {
   const ref = useRef<HTMLCanvasElement>(null)
   const geometry = useRef({ x: 0, y: 0, w: 1, h: 1 })
@@ -43,8 +47,76 @@ export default function TableCanvas({ balls, ratio, selected, onSelect, showLabe
       }
       ctx.font = '10px ui-monospace, monospace'; ctx.fillStyle = '#7b8b86'
       ctx.fillText('0, 0', x - 8, y - 28); ctx.textAlign = 'right'; ctx.fillText('1, 1', x + w + 7, y + h + 34); ctx.textAlign = 'left'
+      const cueBall = balls.find(ball => ball.kind === 'cue')
+      const cueRadius = (cueBall?.radius ?? 0.026) * h
+      const at = (p: [number, number]) => [x + p[0] * w, y + p[1] * h] as const
+      const line = (path: [number, number][], color: string, width: number, dash: number[] = []) => {
+        if (path.length < 2) return
+        ctx.beginPath(); path.forEach((p, i) => { const [px, py] = at(p); if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py) })
+        ctx.setLineDash(dash); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.stroke(); ctx.setLineDash([])
+      }
+      // Live cue-stick overlay: aim line from the white ball, then the prediction paths.
+      if (aimMode && aim && cueBall) {
+        const [cx, cy] = at([cueBall.x, cueBall.y])
+        const px = x + aim.x * w, py = y + aim.y * h
+        const angle = Math.atan2(py - cy, px - cx)
+        ctx.save(); ctx.globalAlpha = 0.9; ctx.lineCap = 'round'
+        ctx.setLineDash([7, 6]); ctx.strokeStyle = '#8ecfff'; ctx.lineWidth = 1.5
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(px, py); ctx.stroke(); ctx.setLineDash([])
+        ctx.translate(px, py); ctx.rotate(angle)
+        ctx.fillStyle = '#8ecfff'
+        ctx.beginPath(); ctx.moveTo(9, 0); ctx.lineTo(-3, 5); ctx.lineTo(-3, -5); ctx.closePath(); ctx.fill()
+        ctx.rotate(-angle); ctx.translate(-px, -py)
+        ctx.beginPath(); ctx.arc(px, py, Math.max(3, cueRadius * 0.4), 0, Math.PI * 2); ctx.strokeStyle = '#8ecfff'; ctx.lineWidth = 1.5; ctx.stroke()
+        ctx.restore()
+      }
+      // Animated motion prediction: cue trail, predicted contact point, moving balls.
+      const motionById = motion && motion.status === 'ok' ? new Map(motion.balls.map(entry => [entry.id, entry])) : null
+      const motionDt = motion && motion.dt > 0 ? motion.dt : 0.025
+      const motionT = motion ? Math.max(0, motionElapsed) : 0
+      const contact = motion && motion.status === 'ok'
+        ? motion.events.find(event => event.type === 'contact' && event.with === motion.cue_ball_id) ?? null : null
+      if (motionById && cueBall) {
+        const cuePath = motionById.get(cueBall.id)?.path ?? null
+        if (cuePath && cuePath.length > 1) {
+          const lastTrail = Math.min(cuePath.length - 1, Math.ceil(motionT / motionDt))
+          ctx.save(); ctx.globalAlpha = 0.4; ctx.lineCap = 'round'
+          ctx.strokeStyle = '#66d9e8'; ctx.lineWidth = 2
+          ctx.beginPath()
+          for (let i = 0; i <= lastTrail; i++) { const [px, py] = at(cuePath[i]); if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py) }
+          ctx.stroke(); ctx.restore()
+        }
+        if (contact && motion!.ghost_pos && motionT < contact.t) {
+          const [gx, gy] = at(motion!.ghost_pos)
+          ctx.beginPath(); ctx.arc(gx, gy, Math.max(4, cueRadius), 0, Math.PI * 2)
+          ctx.setLineDash([3, 3]); ctx.strokeStyle = '#66d9e8'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([])
+        }
+      }
+      shots.forEach((shot, index) => {
+        const active = index === activeShot
+        ctx.save(); ctx.globalAlpha = active ? 0.95 : 0.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+        line(shot.target_path, '#ffd166', active ? 2.5 : 1.5)
+        line(shot.cue_path, '#ffffff', active ? 2.5 : 1.5)
+        if (active) line(shot.cue_deflect_path, '#ffffff', 1.5, [5, 5])
+        if (shot.ghost_pos) {
+          const [gx, gy] = at(shot.ghost_pos)
+          ctx.beginPath(); ctx.arc(gx, gy, Math.max(4, cueRadius), 0, Math.PI * 2); ctx.setLineDash([3, 3]); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([])
+        }
+        ctx.restore()
+      })
       for (const ball of balls) {
-        const bx = x + ball.x * w, by = y + ball.y * h, r = Math.max(4, ball.radius * h)
+        const motionBall = motionById?.get(ball.id)
+        if (motionBall && motionBall.potted_t !== null && motionT > motionBall.potted_t) continue
+        let bx = x + ball.x * w, by = y + ball.y * h
+        if (motionBall && motionBall.path.length > 1 && motionT > 0) {
+          const idx = Math.min(motionBall.path.length - 1, motionT / motionDt)
+          const i = Math.floor(idx), f = idx - i
+          const [x0, y0] = motionBall.path[i]
+          const next = motionBall.path[Math.min(motionBall.path.length - 1, i + 1)]
+          bx = x + (x0 + (next[0] - x0) * f) * w
+          by = y + (y0 + (next[1] - y0) * f) * h
+        }
+        const r = Math.max(4, ball.radius * h)
         ctx.save()
         if (selected === ball.id) { ctx.strokeStyle = '#caff94'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(bx, by, r + 5, 0, Math.PI * 2); ctx.stroke() }
         ctx.shadowColor = '#092a3388'; ctx.shadowBlur = 4; ctx.shadowOffsetY = 2
@@ -65,8 +137,24 @@ export default function TableCanvas({ balls, ratio, selected, onSelect, showLabe
     }
     const observer = new ResizeObserver(render); observer.observe(canvas); render()
     return () => observer.disconnect()
-  }, [balls, ratio, selected, showLabels, showGrid])
-  return <canvas ref={ref} tabIndex={0} aria-label={`Virtual table with ${balls.length} detected balls. Use arrow keys to inspect balls; Escape clears selection.`} onKeyDown={event => {
+  }, [balls, ratio, selected, showLabels, showGrid, shots, activeShot, aimMode, aim, motion, motionElapsed])
+  const dragAim = useRef(false)
+  const tablePoint = (event: React.PointerEvent<HTMLCanvasElement>): Point => {
+    const bounds = event.currentTarget.getBoundingClientRect(), { x, y, w, h } = geometry.current
+    return { x: Math.min(1, Math.max(0, (event.clientX - bounds.left - x) / w)), y: Math.min(1, Math.max(0, (event.clientY - bounds.top - y) / h)) }
+  }
+  return <canvas ref={ref} tabIndex={0} aria-label={`Virtual table with ${balls.length} detected balls. Use arrow keys to inspect balls; Escape clears selection.`}
+    onPointerDown={event => {
+      if (aimMode && onAim && balls.some(ball => ball.kind === 'cue')) {
+        try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* synthetic pointers cannot be captured */ }
+        dragAim.current = true
+        onAim(tablePoint(event))
+      }
+    }}
+    onPointerMove={event => { if (dragAim.current && onAim) onAim(tablePoint(event)) }}
+    onPointerUp={() => { dragAim.current = false }}
+    onPointerCancel={() => { dragAim.current = false }}
+    onKeyDown={event => {
     if (event.key === 'Escape') onSelect(null)
     if (['ArrowLeft', 'ArrowRight'].includes(event.key) && balls.length) {
       event.preventDefault()
@@ -75,6 +163,7 @@ export default function TableCanvas({ balls, ratio, selected, onSelect, showLabe
       onSelect(balls[next].id)
     }
   }} onClick={event => {
+    if (aimMode) return
     const bounds = event.currentTarget.getBoundingClientRect(), { x, y, w, h } = geometry.current
     const px = event.clientX - bounds.left, py = event.clientY - bounds.top
     const hit = balls.find(ball => Math.hypot(px - x - ball.x * w, py - y - ball.y * h) < Math.max(12, ball.radius * h + 5))

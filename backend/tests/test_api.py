@@ -78,7 +78,7 @@ def test_docs_and_contract_expose_only_numerical_application_routes(client):
     assert client.get("/health").json()["engine"] == "OpenCV"
     schema = client.get("/openapi.json").json()
     assert set(schema["paths"]) == {"/health", "/api/v1/settings", "/api/v1/categories", "/api/v1/images/calibrate",
-        "/api/v1/images/detect", "/api/v1/camera", "/api/v1/camera/calibrate", "/api/v1/camera/detect"}
+        "/api/v1/images/detect", "/api/v1/camera", "/api/v1/camera/calibrate", "/api/v1/camera/detect", "/api/v1/shots", "/api/v1/shots/predict", "/api/v1/shots/simulate"}
     for path, operations in schema["paths"].items():
         for operation in operations.values():
             assert set(operation["responses"]["200"]["content"]) == {"application/json"}, path

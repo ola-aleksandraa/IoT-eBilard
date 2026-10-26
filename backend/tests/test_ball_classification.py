@@ -146,3 +146,54 @@ def test_round_camera_silhouettes_survive_strong_end_on_perspective():
     for x, y, _, _ in expected:
         assert min(np.hypot(b["source_x"]*999-x, b["source_y"]*799-y) for b in result["balls"]) < 3
     assert all(0 <= b["x"] <= 1 and 0 <= b["y"] <= 1 for b in result["balls"])
+
+
+def test_pale_cloth_is_not_used_as_a_white_balance_reference():
+    image = np.full((400, 800, 3), (180, 184, 125), np.uint8)
+    cv2.circle(image, (200, 200), 22, (235, 238, 240), -1)
+    gains = white_balance(image)
+    assert max(gains) < 1.08
+    assert classify(image, 200, 200, 22, gains)[0] == "cue"
+
+
+def test_pale_colored_body_is_not_treated_as_cue_white():
+    image = ball_image((155, 205, 245))
+    assert classify(image, 60, 60, 35)[0] == "solid"
+
+
+def test_attached_cloth_shadows_do_not_duplicate_ball_detections():
+    image = np.full((500, 1000, 3), (175, 180, 115), np.uint8)
+    shadow = np.zeros(image.shape[:2], np.uint8)
+    expected = [(200, 180, (240, 243, 244)), (500, 250, (25, 25, 25)), (800, 320, (150, 195, 240))]
+    for x, y, _ in expected:
+        cv2.ellipse(shadow, (x, y + 17), (20, 15), 0, 0, 360, 255, -1)
+    shadow = cv2.GaussianBlur(shadow, (15, 15), 4)
+    image = np.uint8(image.astype(float) * (1 - .6 * shadow[:, :, None] / 255))
+    for x, y, color in expected:
+        cv2.circle(image, (x, y), 14, color, -1, cv2.LINE_AA)
+    image = cv2.GaussianBlur(image, (3, 3), .7)
+    calibration = {"image_width": 1000, "image_height": 500, "corners": [
+        {"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1}, {"x": 0, "y": 1}]}
+    balls = detect(image, DetectionRequest.parse_obj({"calibration": calibration}))["balls"]
+    assert len(balls) == len(expected)
+    for x, y, _ in expected:
+        assert min(np.hypot(ball["source_x"] * 999 - x, ball["source_y"] * 499 - y) for ball in balls) < 3
+    assert [ball["kind"] for ball in balls] == ["cue", "eight", "solid"]
+
+
+def test_cushion_circle_is_rejected_away_from_a_pocket():
+    image = np.full((500, 1000, 3), (145, 100, 30), np.uint8)
+    cv2.circle(image, (994, 220), 13, (35, 55, 220), -1)
+    cv2.circle(image, (500, 250), 13, (235, 235, 235), -1)
+    calibration = {"image_width": 1000, "image_height": 500, "corners": [
+        {"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1}, {"x": 0, "y": 1}]}
+    balls = detect(image, DetectionRequest.parse_obj({"calibration": calibration}))["balls"]
+    assert len(balls) == 1 and balls[0]["kind"] == "cue"
+
+
+def test_subpixel_hough_center_at_image_edge_is_ignored(monkeypatch):
+    image = np.full((500, 1000, 3), (145, 100, 30), np.uint8)
+    monkeypatch.setattr(cv2, "HoughCircles", lambda *args, **kwargs: np.float32([[[999.8, 499.8, 13], [999.8, 250, 13]]]))
+    calibration = {"image_width": 1000, "image_height": 500, "corners": [
+        {"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1}, {"x": 0, "y": 1}]}
+    assert detect(image, DetectionRequest.parse_obj({"calibration": calibration}))["balls"] == []

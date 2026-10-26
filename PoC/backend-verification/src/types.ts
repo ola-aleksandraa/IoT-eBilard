@@ -26,3 +26,37 @@ export type AnalysisResult = {
   calibration: Calibration | null; settings: Settings; detection: Detection | null; analysis_ms: number;
 }
 export type Frame = { image: string; width: number; height: number; name: string; synthetic: boolean }
+
+export type Shot = {
+  target_ball_id: number; pocket: number; shot_type: 'direct' | 'bank'; score: number; cut_angle: number
+  is_blocked: boolean; blocked_reason: string | null; velocity_remaining: number
+  cue_path: [number, number][]; target_path: [number, number][]; cue_deflect_path: [number, number][]
+  ghost_pos: [number, number] | null; bank_point: [number, number] | null
+}
+export type ShotsResponse = { status: 'ok' | 'no_cue_ball' | 'multiple_cue_balls' | 'no_targets'; cue_ball_id: number | null; shots: Shot[]; blocked: Shot[] }
+export const POCKET_NAMES = ['top left', 'top middle', 'top right', 'bottom left', 'bottom middle', 'bottom right']
+export const SHOT_MESSAGES: Record<Exclude<ShotsResponse['status'], 'ok'> | 'invalid_aim', string> = {
+  no_cue_ball: 'No white ball detected, so no shots to predict.',
+  multiple_cue_balls: 'More than one white ball detected, so no shots to predict.',
+  no_targets: 'No other balls on the table.',
+  invalid_aim: 'Aim point is inside the white ball.',
+}
+// Live cue-stick prediction: full physics roll-out (motion, not just pocket lines).
+export type MotionEvent = {
+  t: number; type: 'contact' | 'cushion' | 'pot'; ball: number; with?: number; pocket?: number
+  x?: number; y?: number; cut_angle?: number
+}
+export type MotionBall = { id: number; path: [number, number][]; potted_t: number | null }
+export type MotionPrediction = {
+  status: 'ok' | 'no_cue_ball' | 'multiple_cue_balls' | 'no_targets' | 'invalid_aim'
+  cue_ball_id: number | null; first_ball_id: number | null
+  ghost_pos: [number, number] | null; cut_angle: number | null
+  power: number; duration: number; dt: number
+  balls: MotionBall[]; events: MotionEvent[]; potted: number[]
+}
+
+export function downloadJSON(value: unknown, name: string) {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }))
+  const link = document.createElement('a'); link.href = url; link.download = name; link.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}

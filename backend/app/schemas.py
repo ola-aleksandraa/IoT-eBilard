@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List, Optional, Tuple
 from typing_extensions import Literal
 
-from pydantic import Field
+from pydantic import BaseModel, Field, validator
 
 from .engine.models import Calibration, LensCalibration, LiveRequest, Settings, StrictModel
 
@@ -119,3 +119,42 @@ class Health(StrictModel):
 
 class ErrorResponse(StrictModel):
     detail: str
+
+
+class ShotBall(BaseModel):
+    """Only the numerical layout is needed; detection evidence is ignored."""
+    id: int
+    kind: BallKind
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    radius: float = Field(gt=0, le=0.2)
+
+    class Config:
+        extra = "ignore"
+        allow_inf_nan = False
+
+
+class ShotLayout(StrictModel):
+    balls: List[ShotBall] = Field(max_items=24)
+    table_ratio: float = Field(default=2, ge=1, le=3)
+
+    @validator("balls")
+    def unique_ids(cls, balls):
+        if len({ball.id for ball in balls}) != len(balls):
+            raise ValueError("Ball IDs must be unique within a layout.")
+        return balls
+
+
+class ShotsRequest(ShotLayout):
+    top_n: int = Field(default=5, ge=1, le=20)
+    include_bank: bool = True
+    include_blocked: bool = False
+
+
+class PredictRequest(ShotLayout):
+    aim_x: float = Field(ge=0, le=1)
+    aim_y: float = Field(ge=0, le=1)
+
+
+class SimulateRequest(PredictRequest):
+    power: float = Field(default=0.6, ge=0, le=1)
