@@ -1,6 +1,7 @@
 """Numerical HTTP interface. All application responses are JSON."""
 
 from datetime import datetime, timezone
+from typing import List
 
 from fastapi import APIRouter, Body, Depends, File, Form, Request, UploadFile
 
@@ -30,7 +31,7 @@ def settings():
     return Settings()
 
 
-@router.get("/categories", response_model=list[Category], tags=["Configuration"])
+@router.get("/categories", response_model=List[Category], tags=["Configuration"])
 def categories():
     """Recognition vocabulary. The client selects colors, patterns and rendering."""
     return [Category(kind=kind, description=description) for kind, description in [

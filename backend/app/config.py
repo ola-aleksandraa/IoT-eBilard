@@ -2,11 +2,12 @@
 
 import os
 from dataclasses import dataclass
+from typing import Union
 
 
 @dataclass(frozen=True)
 class ServerConfig:
-    camera_source: int | str = 0
+    camera_source: Union[int, str] = 0
     camera_width: int = 1280
     camera_height: int = 960
     camera_warmup_frames: int = 3

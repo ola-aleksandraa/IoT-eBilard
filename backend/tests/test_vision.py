@@ -19,7 +19,7 @@ def full_frame(width=1000, height=500):
 def test_perspective_layout_localization_and_distractors(brightness):
     image, calibration = make_demo()
     image = np.uint8(np.clip(image.astype(float) * brightness, 0, 255))
-    result = detect(image, DetectionRequest.model_validate({"calibration": calibration}))
+    result = detect(image, DetectionRequest.parse_obj({"calibration": calibration}))
     assert len(result["balls"]) == len(DEMO_BALLS), "Must neither detect pockets/cue nor miss balls."
     matched = set()
     for x, y, kind, _ in DEMO_BALLS:
@@ -47,7 +47,7 @@ def test_empty_cloth_with_shadow_and_cue_returns_no_balls():
     image = np.full((500, 1000, 3), (100, 120, 25), np.uint8)
     cv2.ellipse(image, (450, 250), (100, 30), 0, 0, 360, (50, 60, 12), -1)
     cv2.line(image, (20, 120), (290, 190), (140, 180, 200), 6)
-    result = detect(image, DetectionRequest.model_validate({"calibration": full_frame()}))
+    result = detect(image, DetectionRequest.parse_obj({"calibration": full_frame()}))
     assert result["balls"] == []
     assert "No balls" in result["warnings"][0]
 
@@ -82,7 +82,7 @@ def test_invalid_corner_order_is_rejected(indexes):
     calibration = full_frame()
     calibration["corners"] = [calibration["corners"][i] for i in indexes]
     with pytest.raises(ValidationError):
-        Calibration.model_validate(calibration)
+        Calibration.parse_obj(calibration)
 
 
 def test_calibration_resolution_mismatch_is_rejected():
@@ -90,12 +90,12 @@ def test_calibration_resolution_mismatch_is_rejected():
     mismatch = copy.deepcopy(calibration)
     mismatch["image_width"] = 640
     with pytest.raises(ValueError, match="resolution differs"):
-        detect(image, DetectionRequest.model_validate({"calibration": mismatch}))
+        detect(image, DetectionRequest.parse_obj({"calibration": mismatch}))
 
 
 def test_mapping_back_to_source_matches_homography():
     image, calibration = make_demo()
-    result = detect(image, DetectionRequest.model_validate({"calibration": calibration}))
+    result = detect(image, DetectionRequest.parse_obj({"calibration": calibration}))
     matrix = np.array(result["homography"])
     for ball in result["balls"]:
         source = np.float32([[[ball["source_x"] * 1199, ball["source_y"] * 759]]])

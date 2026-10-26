@@ -2,8 +2,9 @@
 
 from datetime import datetime
 from time import perf_counter
-from typing import Literal
+from typing import Optional
 from uuid import uuid4
+from typing_extensions import Literal
 
 import numpy as np
 from pydantic import ValidationError
@@ -15,7 +16,7 @@ from .geometry import table_geometry
 from .images import correct_lens
 
 
-def find_calibration(image: np.ndarray) -> Calibration | None:
+def find_calibration(image: np.ndarray) -> Optional[Calibration]:
     height, width = image.shape[:2]
     corners = suggest_corners(image)
     if corners is None:
@@ -47,7 +48,7 @@ def analyze(image: np.ndarray, options: AnalysisOptions, kind: Literal["upload",
     if calibration is not None:
         result = detect(image, DetectionRequest(calibration=calibration, settings=options.settings))
         # Explicit public fields prevent engine display colors becoming API dependencies.
-        balls = [Ball.model_validate({key: ball[key] for key in Ball.model_fields}) for ball in result["balls"]]
+        balls = [Ball.parse_obj({key: ball[key] for key in Ball.__fields__}) for ball in result["balls"]]
         counts = Counts(total=len(balls), **{
             category: sum(ball.kind == category for ball in balls)
             for category in ("cue", "eight", "solid", "striped", "unknown")

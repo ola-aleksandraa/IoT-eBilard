@@ -1,6 +1,7 @@
 """Application composition; run from backend/ with uvicorn app.main:app."""
 
 import threading
+from typing import Optional
 
 import cv2
 from fastapi import FastAPI
@@ -13,7 +14,7 @@ from .schemas import ErrorResponse, Health
 from .services.camera import Camera
 
 
-def create_app(config: ServerConfig | None = None) -> FastAPI:
+def create_app(config: Optional[ServerConfig] = None) -> FastAPI:
     config = config or ServerConfig.from_env()
     cv2.setNumThreads(config.opencv_threads)
     application = FastAPI(

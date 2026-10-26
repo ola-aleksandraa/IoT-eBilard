@@ -5,6 +5,7 @@ models or reference-photo-specific coordinates are used.
 """
 import cv2
 import numpy as np
+from .opencv_compat import find_contours
 
 
 def ordered(points):
@@ -148,7 +149,7 @@ def find_table(image):
     for mask in candidate_masks(small):
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)))
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        contours, _ = find_contours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
         for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:2]:
             area = cv2.contourArea(contour)
             if not .08 * h * w < area < .985 * h * w:
