@@ -1,6 +1,7 @@
 """Bounded image decoding, EXIF normalization and optional lens correction."""
 
 import io
+import json
 import warnings
 from typing import Optional, Type
 
@@ -19,10 +20,15 @@ Image.MAX_IMAGE_PIXELS = MAX_PIXELS
 
 def parse_json(model: Type[BaseModel], value: str):
     try:
-        return model.parse_raw(value)
-    except ValidationError as exc:
-        detail = "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors())
-        raise HTTPException(422, detail) from None
+        parsed = json.loads(value)
+        if not isinstance(parsed, dict):
+            raise HTTPException(422, "Options must be a JSON object.")
+        return model.parse_obj(parsed)
+    except (ValueError, TypeError) as exc:
+        if isinstance(exc, ValidationError):
+            detail = "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors())
+            raise HTTPException(422, detail) from None
+        raise HTTPException(422, "Options must be a valid JSON object.") from None
 
 
 def validate_dimensions(width: int, height: int):

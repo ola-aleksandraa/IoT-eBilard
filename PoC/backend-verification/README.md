@@ -1,78 +1,82 @@
-# Numerical-backend verification client
+# Ball / Detect — numerical-backend client
 
-This separate React/Vite PoC connects to the root `backend/`. It reuses the first
-PoC's canvas, source overlay and browser-camera lifecycle, with a new numerical
-API adapter. Every rectangle, circle, stripe and label is drawn in this browser.
-The backend returns JSON only.
+The original `PoC/ball-detect-to-canvas` interface runs against the standalone
+root `backend/`. Camera preview, source overlays, table rendering and animation
+stay in the browser. FastAPI returns numerical JSON only.
 
 ## Run
 
-Start the root backend first (see [backend README](../../backend/README.md)).
-Then from this directory, using Node.js 22.12+:
+Start the root backend using [its instructions](../../backend/README.md), then:
 
 ```sh
+cd PoC/backend-verification
 npm ci
 npm run dev
 ```
 
-Open **[http://127.0.0.1:5175](http://127.0.0.1:5175)**. The default Vite proxy
-for `/api` points to **http://127.0.0.1:8001**. Override a different server with:
+Open **[http://127.0.0.1:5175](http://127.0.0.1:5175)**. Vite proxies `/api` to
+`http://127.0.0.1:8001`. For another server:
 
 ```sh
 BACKEND_URL=http://127.0.0.1:8002 npm run dev
 ```
 
-The API-docs link in the page targets the default localhost:8001. The app runs
-separately; FastAPI does not serve or depend on this client. The original
-`PoC/ball-detect-to-canvas` remains unchanged.
+The original PoC is unchanged and is not needed at runtime.
 
-## Verify
+## Camera and photos
 
-1. Select **Load local sample**, then **Recognize frame**. Vite serves the local
-   synthetic PNG; the client uploads it to `/api/v1/images/detect`.
-2. Confirm 12 detected candidates: 1 cue, 1 eight, 7 solids, 3 stripes. This is a
-   synthetic functionality fixture, not a real-camera accuracy claim.
-3. Inspect the locally drawn table, coordinate rows and **Inspect numerical API
-   response**. There are no returned images, debug options or backend demo calls.
-4. Select **Load blank frame**, then recognize: old positions clear and the API
-   reports `searching`. Upload a real photo to verify the same path.
-5. Select **Connect browser camera**, grant camera access, then recognize once or
-   enable **Sequential live updates**. Requests wait for one another; frames are
-   capped at 1280×960. The local preview and uploaded pixels belong to the browser.
-6. Use **Reuse detected corners** for a fixed camera, or **Set corners manually**
-   and click four inner-cushion corners clockwise, first edge along the long side.
-   **Reset calibration** returns to automatic estimation. Moving the camera needs
-   fresh calibration even if resolution is unchanged.
-7. **Use server camera** selects `/api/v1/camera/detect`; the server keeps its pixels
-   internally and only its numerical results appear. Configure `CAMERA_SOURCE`
-   when starting FastAPI. Server-camera mode intentionally has no source image.
+- **Connect camera** opens the selected browser camera, shows its live feed and
+  sends sequential JPEG frames (at most 1280×960) for recognition automatically.
+  The next request waits for the previous one; disconnect stops every track and
+  aborts pending recognition. Camera access needs localhost or HTTPS and browser
+  permission. This preview comes from the browser camera, not a server stream.
+- Fixed-camera mode locks corners after eight consistent observations and
+  stabilizes the displayed balls. **Camera is unstable** instead recalibrates
+  each frame. **Recalibrate corners** discards the lock after camera movement.
+- **Try a sample image** loads the local synthetic fixture and recognizes it
+  immediately. **Settings → Upload photo** does the same for JPEG, PNG or WebP.
+  EXIF orientation is handled locally; the pixels displayed are those uploaded.
+  The backend provides neither a demo nor an image-preparation endpoint.
+- **Settings → Set corners manually** freezes a live frame or edits the photo.
+  Click four inner-cushion corners clockwise, first edge along the long side.
+  Drag corners, reset them, rotate the mapping, apply, or cancel. Saved corners
+  can be reused only at matching dimensions and the same camera position.
+- Detection settings, stationary-ball tolerance, ball IDs, table grid and shot
+  suggestions live in Settings. Use **Apply to image** after changing photo
+  detection settings. Select a ball on the virtual table or source image to see
+  its coordinates and decision evidence. Arrow keys inspect balls; Escape clears.
+- **Show shot predictions** requests ranked direct/bank paths from `/api/v1/shots`.
+  **Aim cue** lets you drag on the virtual table and animates the numerical
+  `/api/v1/shots/simulate` result, including contacts, cushions and pots.
+- **Export layout** downloads browser-rendered layout data and calibration as
+  JSON. In fixed-camera mode this is the stabilized display layout; session IDs
+  are approximate associations, not persistent physical identities.
 
-The client clears stale results on source changes, table loss and request failure.
-It aborts in-flight requests on reset/disconnect, correlates frame tokens and
-ignores responses from previous source generations. It does not pretend that
-frame-local ball IDs are stable physical identities. There is no temporal
-smoothing here, so the view exposes the actual numerical detections for review.
+Geometry uses `center=(x*W,y*H)`, `radius=r*H`, `W/H=table_ratio`.
+Colors, stripes, grid, cue and shot paths are client presentation. API recognition
+retains frame correlation and clears old balls on table loss or request failure.
+The root API also supports server-camera capture; the main UI uses the browser
+camera so a source preview is always available.
 
-Rendering uses `center=(x*W,y*H)`, `radius=r*H`, `W/H=table_ratio`. Type colors
-and stripe styles live only in `src/types.ts` and `TableCanvas.tsx`.
-
-## Tests and build
+## Verification
 
 ```sh
 npm test
 npm run build
 ```
 
-Tests cover request shape, JSON-only response handling, frame correlation, source
-loading, numerical rendering, clearing stale detections, late-response rejection
-and the original camera lifecycle tests. The production build also typechecks the
-client. Browser integration is checked against the real root service.
+Coverage includes request shape, JSON-only responses and frame correlation,
+camera lifecycle, sequential polling, corner consensus, display stabilization,
+source loss/failure recovery, photos, calibration and shot controls.
+
+The local synthetic sample contains 12 candidates: 1 cue, 1 eight, 7 solids and
+3 stripes. It checks functionality, not physical-camera accuracy. Real photos
+with blur, glare and shadows can still misclassify full/half patterns; inspect
+uncertain types before using predictions. Physics scores are heuristic too.
 
 `public/sample-table.png` and `public/empty-table.png` are local test assets.
-The synthetic sample derives from the original PoC generator now kept under
-`backend/tests/fixtures/synthetic.py`; neither fixture generation nor delivery is
-part of the runtime API. Regenerate explicitly from the repository root:
+Regenerate explicitly from the repository root with a compatible Python runtime:
 
 ```sh
-backend/.venv/bin/python PoC/backend-verification/scripts/make-fixtures.py
+python PoC/backend-verification/scripts/make-fixtures.py
 ```

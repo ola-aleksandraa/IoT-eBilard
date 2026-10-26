@@ -25,7 +25,9 @@ def white_balance(image, cloth_polygon=None):
     if cloth_polygon is not None:
         area[:] = 0
         cv2.fillConvexPoly(area, np.int32(np.array(cloth_polygon) * scale), 1)
-    bright = (area > 0) & (hsv[:, :, 1] < 105) & (hsv[:, :, 2] > 160)
+    # Pale turquoise cloth is bright and moderately desaturated too. Including
+    # it in the illuminant estimate washes pale colored balls into cue-white.
+    bright = (area > 0) & (hsv[:, :, 1] < 60) & (hsv[:, :, 2] > 160)
     if np.count_nonzero(bright) < 20:
         return np.ones(3)
     values = small[bright].astype(float)
@@ -53,9 +55,9 @@ def appearance(image, x, y, radius, balance=None):
     disk = radial < 0.84**2
     pixels = max(1, np.count_nonzero(disk))
     saturation, value = hsv[:, :, 1], hsv[:, :, 2]
-    white = disk & (saturation < 80) & (value > 110)
+    white = disk & (saturation < 60) & (value > 110)
     dark = disk & (value < 100)
-    colored = disk & (saturation >= 100) & (value >= 100)
+    colored = disk & (saturation >= 65) & (value >= 100)
     wf, df, cf = [np.count_nonzero(m) / pixels for m in (white, dark, colored)]
     outer = disk & (radial > 0.50**2)
     outer_white = np.count_nonzero(white & outer) / max(1, np.count_nonzero(outer))

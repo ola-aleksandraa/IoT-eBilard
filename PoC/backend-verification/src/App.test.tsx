@@ -1,70 +1,180 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { DEFAULT_SETTINGS, type AnalysisResult } from './types'
+import type { AnalysisResult } from './types'
 
-const mocks = vi.hoisted(() => ({ recognize: vi.fn(), localFrame: vi.fn() }))
-vi.mock('./api', () => mocks)
-vi.mock('./TableCanvas', () => ({ default: ({ balls }: { balls: unknown[] }) => <div data-testid="rendered-balls">{balls.length}</div> }))
-vi.mock('./SourceView', () => ({ default: () => <div>Local source preview</div> }))
-vi.mock('./useCamera', () => ({ useCamera: () => ({ video: { current: null }, stream: null, devices: [], deviceId: '', connecting: false, error: '', stop: vi.fn(), connect: vi.fn(), setDeviceId: vi.fn() }) }))
+const mocks = vi.hoisted(() => ({ recognize: vi.fn(), jsonRequest: vi.fn(), localFrame: vi.fn(), video: { current: null }, stream: {} as MediaStream | null }))
+vi.mock('./api', async importOriginal => ({ ...await importOriginal<typeof import('./api')>(), recognize: mocks.recognize, jsonRequest: mocks.jsonRequest, localFrame: mocks.localFrame }))
+vi.mock('./TableCanvas', () => ({ default: ({ balls, aimMode, onAim }: { balls: unknown[]; aimMode: boolean; onAim: (point: { x: number; y: number }) => void }) => <div><div data-testid="canvas-count">{balls.length}</div>{aimMode && <button onClick={() => onAim({ x: .8, y: .4 })}>Aim at object</button>}</div> }))
+vi.mock('./useCamera', () => ({ useCamera: () => ({ video: mocks.video, stream: mocks.stream, devices: [], deviceId: '', connecting: false, error: '', stop: vi.fn(), connect: vi.fn(), setDeviceId: vi.fn(), setError: vi.fn(), refresh: vi.fn() }) }))
 import App from './App'
 
-const found: AnalysisResult = { schema_version: '1.0', frame_id: 'server-frame-1', client_frame_id: '1', table_status: 'detected', settings: DEFAULT_SETTINGS,
-  source: { kind: 'upload', width: 1200, height: 760, acquired_at: '2026-10-23T08:00:00Z', lens_corrected: false },
-  calibration: { image_width: 1200, image_height: 760, corners: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }] },
-  detection: { balls: [{ id: 1, kind: 'cue', x: .2, y: .3, radius: .026, source_x: .2, source_y: .3, confidence: .9, white_fraction: .9, reason: 'White', method: 'contour' }],
-    counts: { total: 1, cue: 1, eight: 0, solid: 0, striped: 0, unknown: 0 },
-    geometry: { table_ratio: 2, source_to_table: [[1 / 1199, 0, 0], [0, 1 / 759, 0], [0, 0, 1]],
-      table_to_source: [[1199, 0, 0], [0, 759, 0], [0, 0, 1]], origin: 'top_left', x_direction: 'right', y_direction: 'down',
-      center_unit: 'normalized_table', radius_unit: 'table_height', source_space: 'oriented_pixels' },
-    cloth_hue: 80, processing_ms: 10, warnings: [] }, analysis_ms: 20 }
-
 beforeEach(() => {
-  mocks.recognize.mockReset(); mocks.localFrame.mockReset()
-  mocks.localFrame.mockResolvedValue({ blob: new Blob(['local']), frame: { image: 'blob:local', width: 1200, height: 760, name: 'sample', synthetic: true } })
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, blob: async () => new Blob(['sample']) }))
-  vi.stubGlobal('URL', { revokeObjectURL: vi.fn() })
+  vi.useFakeTimers(); localStorage.clear(); mocks.recognize.mockReset(); mocks.jsonRequest.mockReset(); mocks.localFrame.mockReset(); mocks.stream = {} as MediaStream
+  Object.defineProperties(HTMLVideoElement.prototype, { readyState: { configurable: true, get: () => 4 }, videoWidth: { configurable: true, get: () => 1280 }, videoHeight: { configurable: true, get: () => 720 } })
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D)
+  vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(callback => callback(new Blob(['frame'], { type: 'image/jpeg' })))
+  HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
+  HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, blob: async () => new Blob(['photo']) }))
+  mocks.localFrame.mockResolvedValue({ blob: new Blob(['photo']), frame: { image: 'data:image/png;base64,cGhvdG8=', width: 1280, height: 720, name: 'photo', synthetic: true } })
 })
-afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
 
-async function loadSample() {
-  fireEvent.click(screen.getByRole('button', { name: 'Load local sample' }))
-  await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Image ready'))
+const found: AnalysisResult = { schema_version: '1.0', frame_id: 'test', client_frame_id: '1',
+  source: { kind: 'upload', width: 1280, height: 720, acquired_at: '2026-10-26T12:00:00Z', lens_corrected: false },
+  settings: { table_ratio: 2, ball_radius_ratio: .026, cloth_hue: null, hue_tolerance: 16, saturation_min: 55, split_touching: true }, analysis_ms: 25,
+  table_status: 'detected', calibration: { image_width: 1280, image_height: 720, corners: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }] },
+  detection: { balls: [{ id: 1, kind: 'cue', x: .3, y: .4, radius: .026, source_x: .3, source_y: .4, confidence: .9, reason: 'White', white_fraction: .9, method: 'contour' }],
+    counts: { total: 1, cue: 1, eight: 0, solid: 0, striped: 0, unknown: 0 },
+    geometry: { table_ratio: 2, source_to_table: [], table_to_source: [], origin: 'top_left', x_direction: 'right', y_direction: 'down', center_unit: 'normalized_table', radius_unit: 'table_height', source_space: 'oriented_pixels' },
+    cloth_hue: 80, processing_ms: 20, warnings: [] } }
+
+function renderUnstable() {
+  const view = render(<App />)
+  fireEvent.click(screen.getByRole('switch', { name: 'Camera is unstable' }))
+  return view
 }
 
-it('loads fixture locally and draws numerical backend results', async () => {
-  mocks.recognize.mockResolvedValue(found)
-  render(<App />); await loadSample()
-  expect(mocks.recognize).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole('button', { name: 'Recognize frame' }))
-  await waitFor(() => expect(screen.getByTestId('rendered-balls').textContent).toBe('1'))
-  expect(screen.getByTestId('api-result').textContent).toContain('"x": 0.2')
-  expect(mocks.recognize.mock.calls[0][0]).toBeInstanceOf(Blob)
+it('waits for each frame, maps results, and clears the canvas when the table disappears', async () => {
+  let resolveFirst!: (value: AnalysisResult) => void
+  mocks.recognize.mockReturnValueOnce(new Promise<AnalysisResult>(resolve => { resolveFirst = resolve }))
+  mocks.recognize.mockResolvedValueOnce({ table_status: 'searching', calibration: null, detection: null })
+  renderUnstable()
+  await act(async () => {})
+  expect(mocks.recognize).toHaveBeenCalledTimes(1)
+  await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+  expect(mocks.recognize).toHaveBeenCalledTimes(1)
+  await act(async () => { resolveFirst(found) })
+  expect(screen.getByTestId('canvas-count').textContent).toBe('1')
+  expect(screen.getByRole('status').textContent).toContain('updating table corners live')
+  await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+  expect(mocks.recognize).toHaveBeenCalledTimes(2)
+  expect(screen.getByTestId('canvas-count').textContent).toBe('0')
+  expect(screen.getByRole('status').textContent).toContain('Looking for the table')
 })
 
-it('clears previous detections on table loss and backend failure', async () => {
-  mocks.recognize.mockResolvedValueOnce(found).mockResolvedValueOnce({ ...found, table_status: 'searching', calibration: null, detection: null }).mockRejectedValueOnce(new Error('Service unavailable'))
-  render(<App />); await loadSample()
-  fireEvent.click(screen.getByRole('button', { name: 'Recognize frame' }))
-  await waitFor(() => expect(screen.getByTestId('rendered-balls').textContent).toBe('1'))
-  fireEvent.click(screen.getByRole('button', { name: 'Recognize frame' }))
-  await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Looking for table'))
-  expect(screen.getByTestId('rendered-balls').textContent).toBe('0')
-  fireEvent.click(screen.getByRole('button', { name: 'Recognize frame' }))
-  await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('Service unavailable'))
-  expect(screen.getByTestId('rendered-balls').textContent).toBe('0')
-})
-
-it('aborts and ignores a late response after resetting the source state', async () => {
-  let finish!: (result: AnalysisResult) => void
-  mocks.recognize.mockImplementation(() => new Promise(resolve => { finish = resolve }))
-  render(<App />); await loadSample()
-  fireEvent.click(screen.getByRole('button', { name: 'Recognize frame' }))
-  await waitFor(() => expect(mocks.recognize).toHaveBeenCalledTimes(1))
-  const signal = mocks.recognize.mock.calls[0][4] as AbortSignal
-  fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }))
+it('aborts a pending frame and clears detections when the camera disconnects', async () => {
+  mocks.recognize.mockResolvedValueOnce(found).mockReturnValueOnce(new Promise(() => {}))
+  const { rerender } = renderUnstable()
+  await act(async () => {})
+  expect(screen.getByTestId('canvas-count').textContent).toBe('1')
+  await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+  const signal = mocks.recognize.mock.calls[1][4] as AbortSignal
+  mocks.stream = null; rerender(<App />)
   expect(signal.aborted).toBe(true)
-  await act(async () => finish(found))
-  expect(screen.getByTestId('rendered-balls').textContent).toBe('0')
+  expect(screen.getByTestId('canvas-count').textContent).toBe('0')
+})
+
+it('clears an old layout on API failure and recovers on a later frame', async () => {
+  mocks.recognize.mockResolvedValueOnce(found).mockRejectedValueOnce(new Error('Service unavailable')).mockResolvedValueOnce(found)
+  renderUnstable()
+  await act(async () => {})
+  expect(screen.getByTestId('canvas-count').textContent).toBe('1')
+  await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+  expect(screen.getByTestId('canvas-count').textContent).toBe('0')
+  expect(screen.getByRole('alert').textContent).toContain('Service unavailable')
+  await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+  expect(screen.getByTestId('canvas-count').textContent).toBe('1')
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+
+it('defaults to fixed-camera consensus, locks corners, then recalibrates on request', async () => {
+  mocks.recognize.mockResolvedValue(found)
+  render(<App />)
+  expect((screen.getByRole('switch', { name: 'Camera is unstable' }) as HTMLInputElement).checked).toBe(false)
+  await act(async () => {})
+  expect(screen.getByTestId('canvas-count').textContent).toBe('0')
+  for (let i = 0; i < 7; i++) await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+  expect(mocks.recognize).toHaveBeenCalledTimes(8)
+  expect(screen.getByRole('status').textContent).toContain('Corners locked')
+  await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+  const lockedConfig = { calibration: mocks.recognize.mock.calls[8][2] }
+  expect(lockedConfig.calibration).toEqual(found.calibration)
+  expect(screen.getByTestId('canvas-count').textContent).toBe('1')
+  fireEvent.click(screen.getByRole('button', { name: 'Recalibrate corners' }))
+  await act(async () => {})
+  const latestConfig = { calibration: mocks.recognize.mock.lastCall![2] }
+  expect(latestConfig.calibration).toBeNull()
+  expect(screen.getByTestId('canvas-count').textContent).toBe('0')
+})
+
+it('switching to unstable mode resumes automatic corner updates', async () => {
+  mocks.recognize.mockResolvedValue(found)
+  render(<App />)
+  await act(async () => {})
+  await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
+  expect({ calibration: mocks.recognize.mock.lastCall![2] }.calibration).not.toBeNull()
+  fireEvent.click(screen.getByRole('switch', { name: 'Camera is unstable' }))
+  await act(async () => {})
+  expect({ calibration: mocks.recognize.mock.lastCall![2] }.calibration).toBeNull()
+  expect(screen.getByRole('status').textContent).toContain('updating table corners live')
+})
+
+
+it('loads and recognizes a local photo immediately and reapplies saved corners to it', async () => {
+  mocks.stream = null
+  mocks.recognize.mockResolvedValue(found)
+  render(<App />)
+  fireEvent.click(screen.getByRole('button', { name: 'Try a sample image' }))
+  await act(async () => {})
+  expect(mocks.localFrame).toHaveBeenCalled()
+  expect(mocks.recognize.mock.calls[0][0]).toBeInstanceOf(Blob)
+  expect(screen.getByTestId('canvas-count').textContent).toBe('1')
+  fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Save current corners' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Use saved corners' }))
+  await act(async () => {})
+  expect(mocks.recognize.mock.lastCall![2]).toEqual(found.calibration)
+  expect(screen.getByTestId('canvas-count').textContent).toBe('1')
+})
+
+it('uploads a photo from settings and clears the old layout on failure', async () => {
+  mocks.stream = null
+  mocks.recognize.mockResolvedValueOnce(found).mockRejectedValueOnce(new Error('Bad photo'))
+  render(<App />)
+  fireEvent.change(screen.getByLabelText('Upload table photo'), { target: { files: [new File(['photo'], 'table.png', { type: 'image/png' })] } })
+  await act(async () => {})
+  expect(mocks.localFrame.mock.calls[0][1]).toBe('table.png')
+  expect(screen.getByTestId('canvas-count').textContent).toBe('1')
+  fireEvent.change(screen.getByLabelText('Upload table photo'), { target: { files: [new File(['bad'], 'bad.png', { type: 'image/png' })] } })
+  await act(async () => {})
+  expect(screen.getByRole('alert').textContent).toContain('Bad photo')
+  expect(screen.getByTestId('canvas-count').textContent).toBe('0')
+})
+
+it('requests and displays shot suggestions, then simulates a cue aim', async () => {
+  mocks.stream = null
+  mocks.recognize.mockResolvedValue(found)
+  const shot = { target_ball_id: 2, pocket: 2, shot_type: 'direct', score: .8, cue_path: [], target_path: [], cue_deflect_path: [] }
+  mocks.jsonRequest.mockResolvedValueOnce({ status: 'ok', cue_ball_id: 1, shots: [shot], blocked: [] })
+    .mockResolvedValueOnce({ status: 'ok', cue_ball_id: 1, first_ball_id: 2, duration: 0, dt: .025, balls: [], events: [{ type: 'contact', with: 1, ball: 2, t: .5 }], potted: [] })
+  render(<App />)
+  fireEvent.click(screen.getByRole('button', { name: 'Try a sample image' }))
+  await act(async () => {})
+  fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Show shot predictions' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Close settings' }))
+  await act(async () => { await vi.advanceTimersByTimeAsync(300) })
+  expect(mocks.jsonRequest.mock.calls[0][0]).toBe('/shots')
+  expect(JSON.parse(mocks.jsonRequest.mock.calls[0][1].body).balls).toEqual(found.detection!.balls)
+  expect(screen.getByRole('button', { name: /Direct · ball 2/ })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Aim cue' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Aim at object' }))
+  await act(async () => { await vi.advanceTimersByTimeAsync(100) })
+  expect(mocks.jsonRequest.mock.calls[1][0]).toBe('/shots/simulate')
+  expect(JSON.parse(mocks.jsonRequest.mock.calls[1][1].body)).toMatchObject({ aim_x: .8, aim_y: .4, table_ratio: 2 })
+  expect(screen.getByLabelText('Cue prediction').textContent).toContain('Ball 2 hit at 0.50 s')
+})
+
+
+it('waits for usable camera pixels instead of uploading a privacy placeholder', async () => {
+  Object.defineProperties(HTMLVideoElement.prototype, {
+    videoWidth: { configurable: true, get: () => 2 }, videoHeight: { configurable: true, get: () => 2 },
+  })
+  renderUnstable()
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+  expect(mocks.recognize).not.toHaveBeenCalled()
+  expect(screen.getByRole('status').textContent).toContain('Waiting for camera frames')
 })

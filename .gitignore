@@ -9,3 +9,4 @@ backend/evaluation-output/
 node_modules/
 dist/
 *.tsbuildinfo
+.venv-local/

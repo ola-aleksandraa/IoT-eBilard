@@ -5,17 +5,18 @@ It receives a frame or captures a server camera and returns JSON with ball
 categories, counts, normalized 2D coordinates, decision evidence and homography
 matrices. All visualization belongs to the consuming application.
 
+See the [backend startup instructions](backend/README.md#start-and-api-reference)
+for its Python 3.7.3 / Debian target and dependencies. Run from `backend/`:
+
 ```sh
-cd backend
-uv sync --python 3.12 --frozen
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8001
+python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
 
 Interactive API: **[http://127.0.0.1:8001/docs](http://127.0.0.1:8001/docs)**.
 
 **[PoC/backend-verification/](PoC/backend-verification/README.md)** is a separate
-React verification client based on the first PoC's canvas, source view and camera
-lifecycle. It connects to the root backend, uploads local/browser-camera pixels,
+React client restoring the first PoC's camera/table interface, calibration,
+display stabilization, shot suggestions and cue animation. It connects to the root backend, uploads local/browser-camera pixels,
 and draws the numerical response locally. Fixtures are served by that client.
 
 ```sh

@@ -33,6 +33,10 @@ def refine_edges(contour, quad, diagonal):
         inliers = selected[distances <= max(1.5, float(np.quantile(distances, .70)))]
         if len(inliers) >= 10:
             vx, vy, x, y = cv2.fitLine(inliers.astype(np.float32), cv2.DIST_HUBER, 0, .01, .01).ravel()
+            # Score the robust line on the same inliers used to fit it. Pocket
+            # gaps, shadows and textured rail boundaries are excluded above;
+            # charging their old residual again rejects otherwise straight rails.
+            distances = np.abs((inliers[:, 0] - x) * vy - (inliers[:, 1] - y) * vx)
         lines.append(np.array([vy, -vx, vx * y - vy * x]))
         residuals.append(float(np.median(distances)))
     corners = []

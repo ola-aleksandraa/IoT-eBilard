@@ -1,14 +1,15 @@
 """Numerical HTTP interface. All application responses are JSON."""
 
 from datetime import datetime, timezone
-from typing import List
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Body, Depends, File, Form, Request, UploadFile
 
 from ..engine.models import Settings
-from ..schemas import AnalysisOptions, AnalysisResult, CalibrationOptions, CalibrationResult, CameraStatus, Category
+from ..schemas import AnalysisOptions, AnalysisResult, CalibrationOptions, CalibrationResult, CameraStatus, Category, PredictRequest, ShotsRequest, SimulateRequest
 from ..services.analysis import analyze, calibrate
 from ..services.images import parse_json, read_image
+from ..trajectory import plan_shots, predict_shot, simulate_motion
 from .dependencies import processing_slot
 
 router = APIRouter(prefix="/api/v1")
@@ -73,19 +74,39 @@ def camera_status(request: Request):
 
 
 @router.post("/camera/calibrate", response_model=CalibrationResult, tags=["Camera"], dependencies=guarded)
-def camera_calibrate(request: Request, options: CalibrationOptions = Body(default_factory=CalibrationOptions,
+def camera_calibrate(request: Request, options: Optional[CalibrationOptions] = Body(default=None,
     openapi_examples={"automatic": {"summary": "Automatic calibration", "value": {}}})):
     """Capture internally and return only table calibration/geometry JSON."""
     image, acquired_at = request.app.state.camera.capture()
-    return calibrate(image, options, "camera", acquired_at)
+    return calibrate(image, options or CalibrationOptions(), "camera", acquired_at)
 
 
 @router.post("/camera/detect", response_model=AnalysisResult, tags=["Camera"], dependencies=guarded)
-def camera_detect(request: Request, options: AnalysisOptions = Body(default_factory=AnalysisOptions, openapi_examples=OPTIONS_EXAMPLES)):
+def camera_detect(request: Request, options: Optional[AnalysisOptions] = Body(default=None, openapi_examples=OPTIONS_EXAMPLES)):
     """Capture internally and return numerical recognition JSON. Poll sequentially.
 
     CAMERA_SOURCE selects the server device/stream. Every call opens, reads and
     releases it. No raw frame, rendered preview or base64 payload is returned.
     """
     image, acquired_at = request.app.state.camera.capture()
-    return analyze(image, options, "camera", acquired_at)
+    return analyze(image, options or AnalysisOptions(), "camera", acquired_at)
+
+
+@router.post("/shots", tags=["Shots"], dependencies=guarded)
+def shots(options: ShotsRequest) -> Dict:
+    """Rank direct and bank shots using normalized ball positions; return numerical paths."""
+    return plan_shots(options.balls, options.table_ratio, options.top_n,
+                      options.include_bank, options.include_blocked)
+
+
+@router.post("/shots/predict", tags=["Shots"], dependencies=guarded)
+def predict(options: PredictRequest) -> Dict:
+    """Predict the first contact and pocket paths for a cue aim."""
+    return predict_shot(options.balls, options.table_ratio, (options.aim_x, options.aim_y))
+
+
+@router.post("/shots/simulate", tags=["Shots"], dependencies=guarded)
+def simulate(options: SimulateRequest) -> Dict:
+    """Roll out a cue aim with collisions, cushions and pots as time-sampled coordinates."""
+    return simulate_motion(options.balls, options.table_ratio,
+                           (options.aim_x, options.aim_y), options.power)

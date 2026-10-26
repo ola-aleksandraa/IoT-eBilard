@@ -141,6 +141,7 @@ def locate_source(image, source_points, homography, width, height, settings):
     cv2.drawContours(mask, contours, -1, 255, cv2.FILLED)
     mask[area == 0] = 0
     candidates = []
+    resolved_components = set()
     count, labels, stats, centers = cv2.connectedComponentsWithStats(mask)
     for label in range(1, count):
         x, y, bw, bh, size = stats[label]
@@ -164,6 +165,8 @@ def locate_source(image, source_points, homography, width, height, settings):
                 local = separated
         for cx, cy, radius, score, method in local:
             candidates.append((cx + x - 2, cy + y - 2, radius, score, method))
+        if local:
+            resolved_components.add(label)
 
     gray = cv2.GaussianBlur(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY), (3, 3), 0.8)
     gray[area == 0] = round(median_v * 0.6)
@@ -181,7 +184,10 @@ def locate_source(image, source_points, homography, width, height, settings):
         edges = cv2.dilate(cv2.Canny(gray, 30, 65), np.ones((3, 3), np.uint8))
         angles = np.linspace(0, 2 * np.pi, 64, endpoint=False)
         for x, y, radius in circles[0]:
-            if area[round(y), round(x)] == 0:
+            pixel_x, pixel_y = round(float(x)), round(float(y))
+            # Hough subpixel centers at width-.5/height-.5 can round outside
+            # the raster. Border proposals must not crash live recognition.
+            if not (0 <= pixel_x < w and 0 <= pixel_y < h) or area[pixel_y, pixel_x] == 0:
                 continue
             expected = expected_at(x, y)
             if not 0.60 * expected <= radius <= 1.45 * expected:
@@ -197,8 +203,18 @@ def locate_source(image, source_points, homography, width, height, settings):
             )
             occupancy = float(np.mean(mask[inner_y, inner_x] > 0))
             if support >= 0.60 and occupancy >= 0.35:
+                # A stripe, number patch or cast shadow can yield a smaller
+                # Hough circle within one ball silhouette. Use its foreground
+                # component's short axis to sample the body and merge these
+                # overlapping proposals, bounded by the local physical scale.
+                label = labels[pixel_y, pixel_x]
+                method = "source-hough"
+                if label and label not in resolved_components:
+                    short_side = min(stats[label, cv2.CC_STAT_WIDTH], stats[label, cv2.CC_STAT_HEIGHT])
+                    radius = max(radius, min(short_side / 2, expected * 1.6))
+                    method = "source-hough-body"
                 candidates.append(
-                    (float(x), float(y), float(radius), support * 1.02, "source-hough")
+                    (float(x), float(y), float(radius), support * 1.02, method)
                 )
     kept = []
     for x, y, radius, score, method in sorted(candidates, key=lambda p: -p[3]):
@@ -222,6 +238,10 @@ def locate_source(image, source_points, homography, width, height, settings):
             min(table[0], width - table[0], table[1], height - table[1])
             < physical_radius * 0.85
         )
+        # A ball center must sit at least roughly a radius inside the cloth.
+        # Cushion seams can make convincing circles away from pocket centers.
+        if near_rail:
+            continue
         if near_pocket:
             angles = np.linspace(0, 2 * np.pi, 64, endpoint=False)
             xs = np.clip(
@@ -231,11 +251,12 @@ def locate_source(image, source_points, homography, width, height, settings):
                 np.round(y + radius * 1.5 * np.sin(angles)).astype(int), 0, h - 1
             )
             cloth_support = np.mean((mask[ys, xs] == 0) & (area[ys, xs] > 0))
-            if near_rail or cloth_support < 0.38:
+            if cloth_support < 0.38:
                 continue
         if not (0 <= table[0] <= width - 1 and 0 <= table[1] <= height - 1):
             continue
-        if all(np.hypot(x - k[0], y - k[1]) > (radius + k[2]) * 0.65 for k in kept):
+        if all(np.hypot(x - k[0], y - k[1]) > (radius + k[2]) *
+               (0.85 if method == "source-hough-body" and k[4] == method else 0.65) for k in kept):
             kept.append((x, y, radius, score, method))
     return (
         [

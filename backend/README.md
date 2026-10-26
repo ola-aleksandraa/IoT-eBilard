@@ -38,6 +38,22 @@ The backend runs independently of `PoC/` and has no frontend startup dependency.
 It binds to loopback by default; expose it through your application's configured
 gateway when adding remote access/authentication.
 
+## Local development on modern macOS or Linux
+
+The Debian deployment pins above require Python 3.7. For a modern development
+machine, use the separate Python 3.12 dependency set (including OpenCV 4):
+
+```sh
+cd backend
+uv venv --python 3.12 .venv-local
+uv pip install --python .venv-local/bin/python -r requirements-local.txt
+.venv-local/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
+```
+
+Run checks with `.venv-local/bin/python -m pytest -q`. This local dependency set
+was tested separately; it does not change the Debian/Python 3.7 deployment target.
+Do not install the Python 3.7 project pins into a Python 3.12 environment.
+
 ## Public API
 
 | Method and path | Input | Numerical response |
@@ -47,6 +63,9 @@ gateway when adding remote access/authentication.
 | `GET /api/v1/categories` | — | `cue`, `eight`, `solid`, `striped`, `unknown` and meanings |
 | `POST /api/v1/images/calibrate` | Multipart `file`, optional JSON string `config` | Source dimensions, normalized corners, forward/inverse homographies |
 | `POST /api/v1/images/detect` | Multipart `file`, optional JSON string `config` | Types, counts, normalized coordinates, geometry, decision evidence |
+| `POST /api/v1/shots` | Normalized ball layout | Ranked direct/bank shot paths and scores |
+| `POST /api/v1/shots/predict` | Layout and cue aim | First contact and pocket paths |
+| `POST /api/v1/shots/simulate` | Layout, cue aim and power | Time-sampled ball motion, contacts, cushions and pots |
 | `GET /api/v1/camera` | — | Server camera configuration, without accessing the device |
 | `POST /api/v1/camera/calibrate` | Optional `CalibrationOptions` JSON body | Internal capture → calibration/geometry JSON |
 | `POST /api/v1/camera/detect` | Optional `AnalysisOptions` JSON body | Internal capture → recognition JSON |
@@ -245,6 +264,7 @@ app/
   services/images.py      Bounded decode, EXIF and internal lens correction
   services/camera.py      On-demand capture and guaranteed release
   engine/                 Original PoC detection/classification mathematics
+  trajectory/             Ported numerical shot planning and motion simulation
 tests/fixtures/           Synthetic test data; not imported by the application
 ```
 
@@ -254,8 +274,11 @@ connected components, contour circularity `4πA/P²`, minimum enclosing circles,
 Canny edges, gradient Hough circles, Euclidean distance transforms, local maxima,
 marker-controlled watershed, bounded white-balance channel gains, color-area
 ratios, angular sectors, classification thresholds, special-ball uniqueness
-and homography mapping are retained. Recognition thresholds and decision rules
-were not retuned for this API change. Debug rendering/encoding was removed from
+and homography mapping are retained. The photo follow-up now scores refined rail lines on their fitted inliers,
+merges overlapping Hough proposals for unresolved shadowed silhouettes, and
+uses stricter neutral-pixel selection for white balance. Appearance saturation
+thresholds also distinguish pale color from white more conservatively. The
+original regression suite remains in place. Debug rendering/encoding was removed from
 the engine wrapper. Native source silhouettes are still analyzed before planar
 mapping. An internal reference scale supports the original radius calculations;
 it imposes no output canvas size on clients.
@@ -274,7 +297,8 @@ video. The synthetic fixture exists under tests only.
 
 The separate **[verification client](../PoC/backend-verification/README.md)**
 uploads its local fixture/browser-camera frames to this API and renders the JSON
-using the first PoC's canvas. Its fixture files are served by Vite. The backend
+using the first PoC's complete camera/table interface, calibration controls,
+shot suggestions and animated cue simulation. Its fixture files are served by Vite. The backend
 does not import that client. Later apps can consume the same OpenAPI contract.
 
 JPEG, PNG and WebP inputs are supported. Limits: 12 MiB, 16 megapixels, 100–10,000
@@ -287,10 +311,30 @@ This is a deterministic recognizer, not a guarantee of flawless measurements.
 Occluded stripes, glare, shadows, motion blur, hands, occlusion and low-resolution
 balls can produce errors. Automatic boundaries assume a dominant cloth region;
 manual corners remain available. Ball height produces parallax because homography
-describes the cloth plane. Validate the intended camera and scene. Stable physical
-identities, temporal filtering, shot completion and trajectory prediction remain
-separate application features. No minimum RAM or Raspberry Pi latency is claimed.
+describes the cloth plane. Validate the intended camera and scene. Stable physical identities and shot completion remain separate application
+features. The verification client performs display stabilization; the stateless
+recognition response has no temporal history. Shot planning and cue simulation
+are available as separate numerical operations, using the original PoC physics
+assumptions rather than a measured physical-table model. No minimum RAM or Raspberry Pi latency is claimed.
 
 References: [FastAPI response contracts](https://fastapi.tiangolo.com/tutorial/response-model/),
 [modular applications](https://fastapi.tiangolo.com/tutorial/bigger-applications/),
 [OpenCV homography mathematics](https://docs.opencv.org/4.x/d9/dab/tutorial_homography.html).
+
+## Shot requests
+
+Shot routes accept at most 24 balls with unique layout-local IDs. Each ball needs
+only `id`, `kind`, `x`, `y`, `radius`; extra detection evidence is ignored. Layout
+coordinates and drawing paths are normalized as above. `/shots` also accepts
+`top_n` (1–20), `include_bank` and `include_blocked`. Aim operations accept
+`aim_x`, `aim_y` in [0,1]; simulation adds `power` in [0,1]. All heavy operations
+share the same admission guard and return 503 while another operation is active.
+
+```sh
+curl -sS http://127.0.0.1:8001/api/v1/shots/simulate \
+  -H 'Content-Type: application/json' \
+  -d '{"balls":[{"id":1,"kind":"cue","x":0.2,"y":0.5,"radius":0.026},{"id":2,"kind":"solid","x":0.6,"y":0.5,"radius":0.026}],"aim_x":0.9,"aim_y":0.5,"power":0.6}'
+```
+
+Results describe hypothetical motion, not a calibrated forecast for the physical
+table. They contain coordinates/events only, without pixels or rendering styles.
