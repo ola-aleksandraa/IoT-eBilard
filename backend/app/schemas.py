@@ -1,22 +1,21 @@
 """Versioned numerical contracts. Rendering and test fixtures are client concerns."""
 
 from datetime import datetime
-from typing import List, Optional, Tuple
-from typing_extensions import Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field, validator
 
 from .engine.models import Calibration, LensCalibration, LiveRequest, Settings, StrictModel
 
 BallKind = Literal["cue", "eight", "solid", "striped", "unknown"]
-Matrix3x3 = Tuple[Tuple[float, float, float], Tuple[float, float, float], Tuple[float, float, float]]
+Matrix3x3 = tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
 
 
 class AnalysisOptions(LiveRequest):
-    lens: Optional[LensCalibration] = Field(default=None, description=(
+    lens: LensCalibration | None = Field(default=None, description=(
         "Optional internal lens correction. Source coordinates then refer to undistorted, EXIF-oriented pixels."
     ))
-    client_frame_id: Optional[str] = Field(default=None, max_length=128, description="Optional caller frame token, echoed unchanged.")
+    client_frame_id: str | None = Field(default=None, max_length=128, description="Optional caller frame token, echoed unchanged.")
 
 
 class Source(StrictModel):
@@ -63,35 +62,35 @@ class Geometry(StrictModel):
 
 
 class Detection(StrictModel):
-    balls: List[Ball]
+    balls: list[Ball]
     counts: Counts
     geometry: Geometry
-    cloth_hue: Optional[int] = Field(ge=0, le=179)
+    cloth_hue: int | None = Field(ge=0, le=179)
     processing_ms: float = Field(ge=0, description="Engine localization/classification time; excludes acquisition/decode/calibration.")
-    warnings: List[str]
+    warnings: list[str]
 
 
 class AnalysisResult(StrictModel):
     schema_version: Literal["1.0"] = "1.0"
     frame_id: str = Field(description="Unique server analysis identifier.")
-    client_frame_id: Optional[str]
+    client_frame_id: str | None
     table_status: Literal["detected", "searching"]
     source: Source
-    calibration: Optional[Calibration]
+    calibration: Calibration | None
     settings: Settings
-    detection: Optional[Detection]
+    detection: Detection | None
     analysis_ms: float = Field(ge=0, description="Includes lens correction/calibration; excludes acquisition/decode/network.")
 
 
 class CalibrationResult(StrictModel):
     source: Source
     table_status: Literal["detected", "searching"]
-    calibration: Optional[Calibration]
-    geometry: Optional[Geometry]
+    calibration: Calibration | None
+    geometry: Geometry | None
 
 
 class CalibrationOptions(StrictModel):
-    lens: Optional[LensCalibration] = None
+    lens: LensCalibration | None = None
     settings: Settings = Field(default_factory=Settings)
 
 
@@ -102,7 +101,7 @@ class Category(StrictModel):
 
 class CameraStatus(StrictModel):
     source_kind: Literal["device", "stream", "file"]
-    device_index: Optional[int]
+    device_index: int | None
     capture_mode: Literal["per_request"] = "per_request"
     requested_width: int
     requested_height: int

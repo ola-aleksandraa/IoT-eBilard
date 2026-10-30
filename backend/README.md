@@ -7,20 +7,14 @@ response endpoint, base64 payload or debug-image switch.
 
 ## Start and API reference
 
-The backend targets Debian 10 (Buster) with Python **3.7.3**, Pillow 5.4.1,
-NumPy 1.21.6, FastAPI 0.103.2 and the Debian OpenCV 3.2.0 package. The backend
-uses Pydantic 1, supported by this FastAPI release. Install OpenCV from Buster's
-system packages and the remaining pinned dependencies with pip:
+Python **3.11–3.13** and [uv](https://docs.astral.sh/uv/) are required.
+From the repository root:
 
 ```sh
 cd backend
-sudo apt-get install python3-opencv
-python3 -m pip install --user --upgrade 'pip<24.1'
-python3 -m pip install --user -e .
-python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+uv sync --python 3.12 --frozen
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
-
-Install the test dependencies with `python3 -m pip install --user -e '.[test]'`.
 
 - Interactive docs: **[http://127.0.0.1:8001/docs](http://127.0.0.1:8001/docs)**
 - Machine-readable contract: [http://127.0.0.1:8001/openapi.json](http://127.0.0.1:8001/openapi.json)
@@ -34,7 +28,7 @@ for a camera installation. Port 8001 avoids the original PoC's usual port 8000;
 another port can be selected with `--port`.
 
 The backend runs independently of `PoC/` and has no frontend startup dependency.
-`.env` files are not loaded automatically.
+The lockfile pins the environment. `.env` files are not loaded automatically.
 It binds to loopback by default; expose it through your application's configured
 gateway when adding remote access/authentication.
 

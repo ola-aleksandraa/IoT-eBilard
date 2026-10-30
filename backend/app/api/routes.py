@@ -32,7 +32,7 @@ def settings():
     return Settings()
 
 
-@router.get("/categories", response_model=List[Category], tags=["Configuration"])
+@router.get("/categories", response_model=list[Category], tags=["Configuration"])
 def categories():
     """Recognition vocabulary. The client selects colors, patterns and rendering."""
     return [Category(kind=kind, description=description) for kind, description in [

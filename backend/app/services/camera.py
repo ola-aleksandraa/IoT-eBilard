@@ -32,13 +32,13 @@ class Camera:
         try:
             if isinstance(source, int):
                 capture = cv2.VideoCapture(source)
-            elif hasattr(cv2, "CAP_PROP_OPEN_TIMEOUT_MSEC"):
+            else:
+                # FFmpeg accepts these open-only timeout parameters for network
+                # streams. Files also use this path for reproducible validation.
                 capture = cv2.VideoCapture(source, cv2.CAP_FFMPEG, [
                     cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, self.config.camera_timeout_ms,
                     cv2.CAP_PROP_READ_TIMEOUT_MSEC, self.config.camera_timeout_ms,
                 ])
-            else:
-                capture = cv2.VideoCapture(source)
             if not capture.isOpened():
                 raise HTTPException(503, "Camera unavailable. Check CAMERA_SOURCE, permissions and connection.")
             if isinstance(source, int):

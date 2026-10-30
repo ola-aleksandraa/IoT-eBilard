@@ -1,7 +1,6 @@
 """CPU-only, single-frame pipeline. No weights, training, or temporal identities."""
 
 from time import perf_counter
-from typing import Dict, List, Optional
 
 import cv2
 import numpy as np
@@ -9,7 +8,6 @@ import numpy as np
 from .models import Ball, DetectionRequest, Settings
 from .classification import classify, appearance, classify_features, white_balance, enforce_unique_specials
 from .localization import locate_source, orient_corners, split_component
-from .opencv_compat import find_contours
 
 OUTPUT_WIDTH = 1000
 
@@ -32,7 +30,7 @@ def hue_distance(hue: np.ndarray, reference: int) -> np.ndarray:
     return np.minimum(delta, 180 - delta)
 
 
-def suggest_corners(image: np.ndarray) -> Optional[List[Dict]]:
+def suggest_corners(image: np.ndarray) -> list[dict] | None:
     from .calibration import find_table
     result = find_table(image)
     return orient_corners(image, result["corners"]) if result else None
@@ -58,7 +56,7 @@ def object_mask(image: np.ndarray, settings: Settings):
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
     # Fill white number-patch / specular holes without merging separate objects.
-    contours, _ = find_contours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     cv2.drawContours(mask, contours, -1, 255, cv2.FILLED)
     return mask, hue
 
@@ -87,7 +85,7 @@ def detect(image: np.ndarray, request: DetectionRequest) -> dict:
         balls.append(Ball(id=index, kind=kind, x=round(float(x) / (width - 1), 5), y=round(float(y) / (height - 1), 5),
                           radius=round(radius / height, 5), source_x=round(float(source[0]) / (source_w - 1), 5),
                           source_y=round(float(source[1]) / (source_h - 1), 5), color=color, confidence=confidence,
-                          reason=reason, white_fraction=white_fraction, method=method).dict())
+                          reason=reason, white_fraction=white_fraction, method=method).model_dump())
     balls = enforce_unique_specials(balls, features)
     warnings = ["Classification scores are heuristic, not probabilities. Hidden stripes can resemble solids.",
                 "Coordinates use the cloth plane; ball height causes parallax with an angled camera."]

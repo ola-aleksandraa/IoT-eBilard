@@ -105,7 +105,7 @@ def test_ball_next_to_corner_is_not_rejected_as_a_pocket():
     }
     found = detect(
         image,
-        DetectionRequest.parse_obj({"calibration": calibration}),
+        DetectionRequest.model_validate({"calibration": calibration}),
     )["balls"]
     assert len(found) == 1
     assert abs(found[0]["x"] - 0.017) < 0.005
@@ -141,7 +141,7 @@ def test_round_camera_silhouettes_survive_strong_end_on_perspective():
         cv2.circle(image, (x, y), radius, color, -1)
     calibration = {"image_width": 1000, "image_height": 800,
                    "corners": [{"x": float(x/999), "y": float(y/799)} for x, y in points]}
-    result = detect(image, DetectionRequest.parse_obj({"calibration": calibration}))
+    result = detect(image, DetectionRequest.model_validate({"calibration": calibration}))
     assert len(result["balls"]) == len(expected)
     for x, y, _, _ in expected:
         assert min(np.hypot(b["source_x"]*999-x, b["source_y"]*799-y) for b in result["balls"]) < 3

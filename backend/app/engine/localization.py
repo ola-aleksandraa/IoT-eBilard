@@ -8,7 +8,6 @@ import math
 
 import cv2
 import numpy as np
-from .opencv_compat import find_contours
 
 
 def fit_candidate(contour, expected, method):
@@ -58,7 +57,7 @@ def split_component(component, expected):
     result = []
     for label in range(2, len(seeds) + 2):
         region = np.uint8((markers == label) & (component > 0)) * 255
-        contours, _ = find_contours(
+        contours, _ = cv2.findContours(
             region, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
         if contours:
@@ -137,7 +136,7 @@ def locate_source(image, source_points, homography, width, height, settings):
     kernel3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel3)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel3)
-    contours, _ = find_contours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     cv2.drawContours(mask, contours, -1, 255, cv2.FILLED)
     mask[area == 0] = 0
     candidates = []
@@ -152,7 +151,7 @@ def locate_source(image, source_points, homography, width, height, settings):
         component = cv2.copyMakeBorder(
             component, 2, 2, 2, 2, cv2.BORDER_CONSTANT, value=0
         )
-        outlines, _ = find_contours(
+        outlines, _ = cv2.findContours(
             component, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
         candidate = fit_candidate(
