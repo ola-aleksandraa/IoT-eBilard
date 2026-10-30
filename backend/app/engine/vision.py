@@ -30,9 +30,9 @@ def hue_distance(hue: np.ndarray, reference: int) -> np.ndarray:
     return np.minimum(delta, 180 - delta)
 
 
-def suggest_corners(image: np.ndarray) -> list[dict] | None:
+def suggest_corners(image: np.ndarray, settings: Settings | None = None) -> list[dict] | None:
     from .calibration import find_table
-    result = find_table(image)
+    result = find_table(image, settings)
     return orient_corners(image, result["corners"]) if result else None
 
 

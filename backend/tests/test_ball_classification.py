@@ -174,7 +174,7 @@ def test_attached_cloth_shadows_do_not_duplicate_ball_detections():
     image = cv2.GaussianBlur(image, (3, 3), .7)
     calibration = {"image_width": 1000, "image_height": 500, "corners": [
         {"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1}, {"x": 0, "y": 1}]}
-    balls = detect(image, DetectionRequest.parse_obj({"calibration": calibration}))["balls"]
+    balls = detect(image, DetectionRequest.model_validate({"calibration": calibration}))["balls"]
     assert len(balls) == len(expected)
     for x, y, _ in expected:
         assert min(np.hypot(ball["source_x"] * 999 - x, ball["source_y"] * 499 - y) for ball in balls) < 3
@@ -187,7 +187,7 @@ def test_cushion_circle_is_rejected_away_from_a_pocket():
     cv2.circle(image, (500, 250), 13, (235, 235, 235), -1)
     calibration = {"image_width": 1000, "image_height": 500, "corners": [
         {"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1}, {"x": 0, "y": 1}]}
-    balls = detect(image, DetectionRequest.parse_obj({"calibration": calibration}))["balls"]
+    balls = detect(image, DetectionRequest.model_validate({"calibration": calibration}))["balls"]
     assert len(balls) == 1 and balls[0]["kind"] == "cue"
 
 
@@ -196,4 +196,4 @@ def test_subpixel_hough_center_at_image_edge_is_ignored(monkeypatch):
     monkeypatch.setattr(cv2, "HoughCircles", lambda *args, **kwargs: np.float32([[[999.8, 499.8, 13], [999.8, 250, 13]]]))
     calibration = {"image_width": 1000, "image_height": 500, "corners": [
         {"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1}, {"x": 0, "y": 1}]}
-    assert detect(image, DetectionRequest.parse_obj({"calibration": calibration}))["balls"] == []
+    assert detect(image, DetectionRequest.model_validate({"calibration": calibration}))["balls"] == []

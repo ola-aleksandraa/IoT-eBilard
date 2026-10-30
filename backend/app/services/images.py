@@ -1,7 +1,6 @@
 """Bounded image decoding, EXIF normalization and optional lens correction."""
 
 import io
-import json
 import warnings
 
 import cv2

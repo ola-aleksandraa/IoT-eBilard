@@ -41,6 +41,11 @@ The original PoC is unchanged and is not needed at runtime.
   Click four inner-cushion corners clockwise, first edge along the long side.
   Drag corners, reset them, rotate the mapping, apply, or cancel. Saved corners
   can be reused only at matching dimensions and the same camera position.
+- **Settings → Table setup** accepts cloth length, cloth width and ball diameter
+  in one unit, deriving the table ratio and expected radius. It also exposes
+  automatic/manual cloth hue and minimum saturation. Use manual corners when
+  automatic boundaries are ambiguous. Table setup is per session; export the
+  settings with a layout when you need to record them.
 - Detection settings, stationary-ball tolerance, ball IDs, table grid and shot
   suggestions live in Settings. Use **Apply to image** after changing photo
   detection settings. Select a ball on the virtual table or source image to see
@@ -55,6 +60,9 @@ The original PoC is unchanged and is not needed at runtime.
 Geometry uses `center=(x*W,y*H)`, `radius=r*H`, `W/H=table_ratio`.
 Colors, stripes, grid, cue and shot paths are client presentation. API recognition
 retains frame correlation and clears old balls on table loss or request failure.
+Frames, shot suggestions and cue simulations share one request queue so they
+respect the backend admission guard. Cancelled queued work is skipped; explicit
+busy responses are retried up to twice, while camera failures are reported.
 The root API also supports server-camera capture; the main UI uses the browser
 camera so a source preview is always available.
 

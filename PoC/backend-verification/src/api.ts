@@ -1,8 +1,39 @@
 import type { AnalysisResult, Calibration, Settings } from './types'
 
-async function request<T>(path: string, init: RequestInit): Promise<T> {
+// Share the backend's single processing lane between frames and shot requests.
+let processing: Promise<unknown> = Promise.resolve()
+
+function request<T>(path: string, init: RequestInit): Promise<T> {
+  const signal = init.signal
+    ? AbortSignal.any([init.signal, AbortSignal.timeout(60000)])
+    : AbortSignal.timeout(60000)
+  const next = processing.then(() => performRequest<T>(path, { ...init, signal }))
+  processing = next.catch(() => {})
+  return next
+}
+
+function pause(ms: number, signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted()
+  return new Promise((resolve, reject) => {
+    const done = () => { signal.removeEventListener('abort', abort); resolve() }
+    const timer = setTimeout(done, ms)
+    const abort = () => { clearTimeout(timer); reject(signal.reason) }
+    signal.addEventListener('abort', abort, { once: true })
+  })
+}
+
+async function performRequest<T>(path: string, init: RequestInit & { signal: AbortSignal }): Promise<T> {
+  init.signal.throwIfAborted()
   let response: Response
-  try { response = await fetch(`/api/v1${path}`, { ...init, signal: init.signal ?? AbortSignal.timeout(60000) }) }
+  try {
+    for (let attempt = 0; ; attempt++) {
+      response = await fetch(`/api/v1${path}`, init)
+      // Aborting HTTP does not stop an OpenCV call already running server-side.
+      // Retry explicit admission-control responses, never camera failures.
+      if (response.status !== 503 || !response.headers.has('Retry-After') || attempt >= 2) break
+      await pause(Math.min(5, Math.max(1, Number(response.headers.get('Retry-After')) || 1)) * 1000, init.signal)
+    }
+  }
   catch (error) {
     if (init.signal?.aborted) throw error
     throw new Error('Cannot reach the detection service. Start the Python backend on port 8001, then try again.')

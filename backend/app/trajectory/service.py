@@ -52,7 +52,7 @@ def plan_shots(balls: Iterable, table_ratio: float, top_n: int = 5,
                                      ball_radius=median(b.radius for b in engine_balls))
     all_shots = find_all_shots(engine_balls, geometry)
     if not include_bank:
-        all_shots = [s for s in all_shots if s.shot_type == "direct" or s.is_blocked]
+        all_shots = [s for s in all_shots if s.shot_type == "direct"]
     score_all_shots(all_shots, geometry, engine_balls)
     top = get_top_shots(shots=all_shots, top_n=top_n, table_layout=geometry, balls=engine_balls,
                         min_score=0.0, deduplicate=True)
@@ -240,7 +240,7 @@ def simulate_motion(balls, table_ratio: float, aim: tuple[float, float], power: 
     pocket_centers = [[float(p[0]), float(p[1])] for p in geometry.pockets]
 
     power = min(1.0, max(0.0, float(power)))
-    speed = SIM_MIN_SPEED + (SIM_FULL_SPEED - SIM_MIN_SPEED) * power
+    speed = 0.0 if power == 0 else SIM_MIN_SPEED + (SIM_FULL_SPEED - SIM_MIN_SPEED) * power
 
     # Plain-float state for speed: positions / velocities as [x, y] lists.
     count = len(engine_balls)
