@@ -47,9 +47,16 @@ def refine_edges(contour, quad, diagonal):
     return np.float32(corners), float(np.mean(residuals))
 
 
-def candidate_masks(image):
+def candidate_masks(image, settings=None):
     image = cv2.GaussianBlur(image, (3, 3), 0)
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    if settings is not None and settings.cloth_hue is not None:
+        delta = np.abs(hsv[:, :, 0].astype(float) - settings.cloth_hue)
+        delta = np.minimum(delta, 180 - delta)
+        yield np.uint8((delta <= settings.hue_tolerance)
+                       & (hsv[:, :, 1] >= settings.saturation_min)
+                       & (hsv[:, :, 2] > 25)) * 255
+        return
     lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB).astype(float)
     h, w = image.shape[:2]
     # Pale/grey cloth under spotlights can lose almost all hue information.
@@ -109,15 +116,21 @@ def inner_cushion_edges(image, quad):
         gradient = np.linalg.norm(samples[:, 4:] - samples[:, :-4], axis=2)
         profile = np.median(gradient, axis=0)
         # The innermost significant transition leads into the flat cloth plane.
-        strong = profile > max(7., float(profile.max()) * .25)
+        # Adjacent cushion seams can form one broad gradient band. The last
+        # coherent peak leads onto the cloth; choosing the strongest peak in
+        # the band can include the cushion face in the playing surface.
+        threshold = max(4., float(profile.max()) * .12)
+        strong = profile > threshold
         groups = np.split(np.flatnonzero(strong), np.where(np.diff(np.flatnonzero(strong)) > 1)[0] + 1)
         groups = [g for g in groups if len(g) and offsets[g[-1] + 2] < offsets[-1] - 2]
         if groups:
             group = groups[-1]
-            peak = group[np.argmax(profile[group])]
-            low, high = max(0, peak - 5), min(gradient.shape[1], peak + 6)
+            peaks = [j for j in group if 0 < j < len(profile) - 1
+                     and profile[j] >= profile[j - 1] and profile[j] >= profile[j + 1]]
+            peak = peaks[-1] if peaks else group[np.argmax(profile[group])]
+            low, high = max(0, peak - 2), min(gradient.shape[1], peak + 3)
             best = low + np.argmax(gradient[:, low:high], axis=1)
-            valid = gradient[np.arange(len(best)), best] > max(7., profile[peak] * .5)
+            valid = gradient[np.arange(len(best)), best] > max(4., profile[peak] * .5)
             points = positions[valid] + offsets[best[valid] + 2, None] * normal
             if len(points) >= 22:
                 if pale_cloth:
@@ -125,9 +138,7 @@ def inner_cushion_edges(image, quad):
                     # use the photometric seam to correct that coarse angle.
                     vx, vy, x, y = cv2.fitLine(points.astype(np.float32), cv2.DIST_HUBER, 0, .01, .01).ravel()
                     lines.append(np.array([vy, -vx, vx * y - vy * x])); continue
-                # Cushion seams are parallel to the robust full-rail fit.
-                # A median offset avoids rotating the line toward highlights
-                # or alternating between nearby seams in compressed frames.
+                # Preserve the robust full-rail angle on colored cloth.
                 offset = float(np.median(offsets[best[valid] + 2]))
                 lines.append(np.array([normal[0], normal[1], -normal @ (a + offset * normal)])); continue
         lines.append(np.array([normal[0], normal[1], -normal @ a]))
@@ -143,13 +154,13 @@ def inner_cushion_edges(image, quad):
     return refined
 
 
-def find_table(image):
+def find_table(image, settings=None):
     height, width = image.shape[:2]
     scale = min(1, 1000 / max(width, height))
     small = cv2.resize(image, None, fx=scale, fy=scale)
     h, w = small.shape[:2]; diagonal = float(np.hypot(w, h))
     best = None
-    for mask in candidate_masks(small):
+    for mask in candidate_masks(small, settings):
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)))
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)

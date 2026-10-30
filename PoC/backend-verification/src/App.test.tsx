@@ -178,3 +178,55 @@ it('waits for usable camera pixels instead of uploading a privacy placeholder', 
   expect(mocks.recognize).not.toHaveBeenCalled()
   expect(screen.getByRole('status').textContent).toContain('Waiting for camera frames')
 })
+
+it('applies measured table dimensions and cloth controls to photo recognition and shot geometry', async () => {
+  mocks.stream = null
+  mocks.recognize.mockResolvedValue(found)
+  render(<App />)
+  fireEvent.click(screen.getByRole('button', { name: 'Try a sample image' }))
+  await act(async () => {})
+  fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))
+  fireEvent.change(screen.getByLabelText('Cloth length'), { target: { value: '210' } })
+  fireEvent.change(screen.getByLabelText('Cloth width'), { target: { value: '100' } })
+  fireEvent.change(screen.getByLabelText('Ball diameter'), { target: { value: '5.7' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Apply table dimensions' }))
+  expect(screen.getByTestId('canvas-count').textContent).toBe('0')
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Detect cloth color automatically' }))
+  fireEvent.change(screen.getByRole('slider', { name: 'Cloth hue' }), { target: { value: '65' } })
+  fireEvent.change(screen.getByRole('slider', { name: 'Minimum cloth saturation' }), { target: { value: '40' } })
+  const settings = { ...found.settings, table_ratio: 2.1, ball_radius_ratio: .0285, cloth_hue: 65, saturation_min: 40 }
+  const detection = { ...found.detection!, balls: found.detection!.balls.map(ball => ({ ...ball, radius: .0285 })), geometry: { ...found.detection!.geometry, table_ratio: 2.1 } }
+  mocks.recognize.mockResolvedValue({ ...found, settings, detection })
+  mocks.jsonRequest.mockResolvedValue({ status: 'ok', cue_ball_id: 1, shots: [], blocked: [] })
+  fireEvent.click(screen.getByRole('button', { name: 'Apply to image' }))
+  await act(async () => {})
+  expect(mocks.recognize.mock.lastCall![1]).toEqual(settings)
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Show shot predictions' }))
+  await act(async () => { await vi.advanceTimersByTimeAsync(300) })
+  expect(JSON.parse(mocks.jsonRequest.mock.lastCall![1].body)).toMatchObject({ table_ratio: 2.1, balls: [{ radius: .0285 }] })
+})
+
+it('rejects invalid table measurements without changing the active detection settings', async () => {
+  mocks.stream = null
+  render(<App />)
+  fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Apply table dimensions' }))
+  expect(screen.getByRole('alert').textContent).toContain('Enter positive measurements')
+  expect(screen.getByText('2.00 : 1')).toBeTruthy()
+})
+
+it('refreshes shots when only the detected ball radius changes between live frames', async () => {
+  const changed = { ...found, detection: { ...found.detection!, balls: found.detection!.balls.map(ball => ({ ...ball, radius: .031 })) } }
+  mocks.recognize.mockResolvedValueOnce(found).mockResolvedValue(changed)
+  mocks.jsonRequest.mockResolvedValue({ status: 'ok', cue_ball_id: 1, shots: [], blocked: [] })
+  renderUnstable()
+  await act(async () => {})
+  fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Show shot predictions' }))
+  await act(async () => { await vi.advanceTimersByTimeAsync(300) })
+  expect(mocks.jsonRequest).toHaveBeenCalledTimes(1)
+  await act(async () => { await vi.advanceTimersByTimeAsync(200) })
+  await act(async () => { await vi.advanceTimersByTimeAsync(300) })
+  expect(mocks.jsonRequest).toHaveBeenCalledTimes(2)
+  expect(JSON.parse(mocks.jsonRequest.mock.lastCall![1].body).balls[0].radius).toBe(.031)
+})

@@ -1,12 +1,11 @@
 """Numerical HTTP interface. All application responses are JSON."""
 
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Body, Depends, File, Form, Request, UploadFile
 
 from ..engine.models import Settings
-from ..schemas import AnalysisOptions, AnalysisResult, CalibrationOptions, CalibrationResult, CameraStatus, Category, PredictRequest, ShotsRequest, SimulateRequest
+from ..schemas import AnalysisOptions, AnalysisResult, CalibrationOptions, CalibrationResult, CameraStatus, Category, PredictRequest, PredictionResult, ShotsRequest, ShotsResult, SimulateRequest, SimulationResult
 from ..services.analysis import analyze, calibrate
 from ..services.images import parse_json, read_image
 from ..trajectory import plan_shots, predict_shot, simulate_motion
@@ -74,7 +73,7 @@ def camera_status(request: Request):
 
 
 @router.post("/camera/calibrate", response_model=CalibrationResult, tags=["Camera"], dependencies=guarded)
-def camera_calibrate(request: Request, options: Optional[CalibrationOptions] = Body(default=None,
+def camera_calibrate(request: Request, options: CalibrationOptions | None = Body(default=None,
     openapi_examples={"automatic": {"summary": "Automatic calibration", "value": {}}})):
     """Capture internally and return only table calibration/geometry JSON."""
     image, acquired_at = request.app.state.camera.capture()
@@ -82,7 +81,7 @@ def camera_calibrate(request: Request, options: Optional[CalibrationOptions] = B
 
 
 @router.post("/camera/detect", response_model=AnalysisResult, tags=["Camera"], dependencies=guarded)
-def camera_detect(request: Request, options: Optional[AnalysisOptions] = Body(default=None, openapi_examples=OPTIONS_EXAMPLES)):
+def camera_detect(request: Request, options: AnalysisOptions | None = Body(default=None, openapi_examples=OPTIONS_EXAMPLES)):
     """Capture internally and return numerical recognition JSON. Poll sequentially.
 
     CAMERA_SOURCE selects the server device/stream. Every call opens, reads and
@@ -92,21 +91,21 @@ def camera_detect(request: Request, options: Optional[AnalysisOptions] = Body(de
     return analyze(image, options or AnalysisOptions(), "camera", acquired_at)
 
 
-@router.post("/shots", tags=["Shots"], dependencies=guarded)
-def shots(options: ShotsRequest) -> Dict:
+@router.post("/shots", response_model=ShotsResult, tags=["Shots"], dependencies=guarded)
+def shots(options: ShotsRequest):
     """Rank direct and bank shots using normalized ball positions; return numerical paths."""
     return plan_shots(options.balls, options.table_ratio, options.top_n,
                       options.include_bank, options.include_blocked)
 
 
-@router.post("/shots/predict", tags=["Shots"], dependencies=guarded)
-def predict(options: PredictRequest) -> Dict:
+@router.post("/shots/predict", response_model=PredictionResult, response_model_exclude_unset=True, tags=["Shots"], dependencies=guarded)
+def predict(options: PredictRequest):
     """Predict the first contact and pocket paths for a cue aim."""
     return predict_shot(options.balls, options.table_ratio, (options.aim_x, options.aim_y))
 
 
-@router.post("/shots/simulate", tags=["Shots"], dependencies=guarded)
-def simulate(options: SimulateRequest) -> Dict:
+@router.post("/shots/simulate", response_model=SimulationResult, response_model_exclude_unset=True, tags=["Shots"], dependencies=guarded)
+def simulate(options: SimulateRequest):
     """Roll out a cue aim with collisions, cushions and pots as time-sampled coordinates."""
     return simulate_motion(options.balls, options.table_ratio,
                            (options.aim_x, options.aim_y), options.power)

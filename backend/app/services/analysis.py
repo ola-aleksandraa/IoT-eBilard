@@ -8,16 +8,16 @@ from uuid import uuid4
 import numpy as np
 from pydantic import ValidationError
 
-from ..engine.models import Calibration, DetectionRequest
+from ..engine.models import Calibration, DetectionRequest, Settings
 from ..engine.vision import detect, suggest_corners
 from ..schemas import AnalysisOptions, AnalysisResult, Ball, CalibrationOptions, CalibrationResult, Counts, Detection, Source
 from .geometry import table_geometry
 from .images import correct_lens
 
 
-def find_calibration(image: np.ndarray) -> Calibration | None:
+def find_calibration(image: np.ndarray, settings: Settings) -> Calibration | None:
     height, width = image.shape[:2]
-    corners = suggest_corners(image)
+    corners = suggest_corners(image, settings)
     if corners is None:
         return None
     try:
@@ -33,7 +33,7 @@ def source_info(image: np.ndarray, kind: Literal["upload", "camera"], acquired_a
 
 def calibrate(image: np.ndarray, options: CalibrationOptions, kind: Literal["upload", "camera"], acquired_at: datetime) -> CalibrationResult:
     image = correct_lens(image, options.lens)
-    calibration = find_calibration(image)
+    calibration = find_calibration(image, options.settings)
     return CalibrationResult(source=source_info(image, kind, acquired_at, options.lens is not None),
         table_status="detected" if calibration else "searching", calibration=calibration,
         geometry=table_geometry(calibration, options.settings.table_ratio, options.lens is not None) if calibration else None)
@@ -42,7 +42,7 @@ def calibrate(image: np.ndarray, options: CalibrationOptions, kind: Literal["upl
 def analyze(image: np.ndarray, options: AnalysisOptions, kind: Literal["upload", "camera"], acquired_at: datetime) -> AnalysisResult:
     start = perf_counter()
     image = correct_lens(image, options.lens)
-    calibration = options.calibration if options.calibration is not None else find_calibration(image)
+    calibration = options.calibration if options.calibration is not None else find_calibration(image, options.settings)
     detection = None
     if calibration is not None:
         result = detect(image, DetectionRequest(calibration=calibration, settings=options.settings))

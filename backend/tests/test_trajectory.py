@@ -120,3 +120,25 @@ def test_shot_routes_share_bounded_admission_control():
             assert response.status_code == 503 and response.headers["retry-after"] == "1"
     finally:
         slot.release()
+
+
+def test_disabling_banks_also_excludes_blocked_bank_candidates():
+    layout = [ball(1, "cue", .2, .5), ball(2, "solid", .8, .5), ball(3, "striped", .5, .5)]
+    result = client.post("/api/v1/shots", json={"balls": layout, "include_bank": False, "include_blocked": True}).json()
+    assert result["blocked"]
+    assert all(s["shot_type"] == "direct" for s in result["shots"] + result["blocked"])
+
+
+def test_zero_power_leaves_a_separated_layout_stationary():
+    layout = [ball(1, "cue", .2, .5), ball(2, "solid", .6, .5)]
+    result = client.post("/api/v1/shots/simulate", json={"balls": layout, "aim_x": .9, "aim_y": .5, "power": 0}).json()
+    assert result["status"] == "ok" and not result["events"]
+    for original, motion in zip(layout, result["balls"]):
+        assert all(point == pytest.approx([original["x"], original["y"]]) for point in motion["path"])
+
+
+def test_openapi_describes_all_numerical_shot_results():
+    schema = client.get("/openapi.json").json()
+    for path, name in [("shots", "ShotsResult"), ("shots/predict", "PredictionResult"), ("shots/simulate", "SimulationResult")]:
+        response = schema["paths"]["/api/v1/" + path]["post"]["responses"]["200"]["content"]["application/json"]["schema"]
+        assert response["$ref"] == "#/components/schemas/" + name

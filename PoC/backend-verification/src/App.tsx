@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDownToLine, Camera, Check, ChevronDown, CircleDot, Crosshair, ImagePlus, Loader2, RefreshCw, Settings2, Square, Video, X } from 'lucide-react'
 import TableCanvas from './TableCanvas'
 import SourceView from './SourceView'
+import TableSetup from './TableSetup'
 import { useCamera } from './useCamera'
 import { BallStabilizer, CornerConsensus } from './stability'
 import { BALL_COLORS, BALL_NAMES, DEFAULT_SETTINGS, downloadJSON, POCKET_NAMES, SHOT_MESSAGES } from './types'
@@ -66,7 +67,7 @@ export default function App() {
 
   // Shot predictions are recomputed only when the (stabilised) ball layout actually changes.
   const ratio = result?.geometry.table_ratio ?? settings.table_ratio
-  const ballsKey = useMemo(() => JSON.stringify(balls.map(ball => [ball.id, ball.kind, +ball.x.toFixed(3), +ball.y.toFixed(3)])), [balls])
+  const ballsKey = useMemo(() => JSON.stringify(balls.map(ball => [ball.id, ball.kind, +ball.x.toFixed(3), +ball.y.toFixed(3), ball.radius])), [balls])
   useEffect(() => {
     setShotPlan(null); setShotError('')
     if (!showShots || !balls.length) { setShotPlan(null); return }
@@ -375,6 +376,10 @@ export default function App() {
       {manual && <button className="text-button auto-button" onClick={recalibrate}>Return to automatic calibration</button>}
       <div className="settings-button-row"><button className="text-button" disabled={!calibration} onClick={() => { if (!calibration) return; try { localStorage.setItem('live-table-calibration', JSON.stringify(calibration)); setSaved(calibration); setStatus('Corners saved for this camera position and resolution.') } catch { setError('Could not save calibration in this browser.') } }}>Save current corners</button><button className="text-button" disabled={!canReuse || !frame && !isLive} onClick={useSavedCorners}>Use saved corners</button></div>
       </section>
+      <TableSetup settings={settings} onChange={next => {
+        setSettings(next); stabilizer.current.reset()
+        if (!isLive) setResult(null)
+      }} />
       <section className="settings-section"><h3>Detection</h3><label className="range-label"><span>Table proportions <strong>{settings.table_ratio.toFixed(2)} : 1</strong></span><input type="range" min="1" max="3" step="0.05" value={settings.table_ratio} onChange={event => changeSettings('table_ratio', Number(event.target.value))} /></label><label className="range-label"><span>Ball radius / table height <strong>{(settings.ball_radius_ratio * 100).toFixed(1)}%</strong></span><input type="range" min="0.012" max="0.06" step="0.001" value={settings.ball_radius_ratio} onChange={event => changeSettings('ball_radius_ratio', Number(event.target.value))} /></label><label className="range-label"><span>Cloth hue tolerance <strong>±{settings.hue_tolerance}</strong></span><input type="range" min="3" max="40" value={settings.hue_tolerance} onChange={event => changeSettings('hue_tolerance', Number(event.target.value))} /></label><label className="range-label"><span>Stationary-ball tolerance <strong>{(jitterTolerance * 100).toFixed(1)}% of table height</strong></span><input type="range" min="0.002" max="0.015" step="0.001" value={jitterTolerance} onChange={event => setJitterTolerance(Number(event.target.value))} /></label><label className="checkbox-label"><input type="checkbox" checked={settings.split_touching} onChange={event => changeSettings('split_touching', event.target.checked)} /> Separate touching balls</label><label className="checkbox-label"><input type="checkbox" checked={showIds} onChange={event => setShowIds(event.target.checked)} /> Show ball IDs</label><label className="checkbox-label"><input type="checkbox" checked={showGrid} onChange={event => setShowGrid(event.target.checked)} /> Show table grid</label><label className="checkbox-label"><input type="checkbox" checked={showShots} onChange={event => setShowShots(event.target.checked)} /> Show shot predictions</label>
       {frame && !isLive && <button className="secondary-button" disabled={busy || editing} onClick={async () => { setBusy(true); setError(''); try { await detectStill(frame, manual) } catch (reason) { setError((reason as Error).message) } finally { setBusy(false) } }}>Apply to image</button>}
       </section>

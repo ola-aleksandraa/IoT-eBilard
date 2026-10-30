@@ -109,7 +109,7 @@ def locate_source(image, source_points, homography, width, height, settings):
     median_v = float(np.median(cloth_pixels[:, 2]))
     foreground = np.zeros((h, w), bool)
     hue = None
-    if median_s > 45 and len(colorful) > 100:
+    if settings.cloth_hue is not None or (median_s > 45 and len(colorful) > 100):
         histogram = np.bincount(colorful[:, 0], minlength=180).astype(float)
         histogram = sum(np.roll(histogram, i) for i in range(-3, 4))
         hue = (
@@ -175,7 +175,7 @@ def locate_source(image, source_points, homography, width, height, settings):
         dp=1,
         minDist=max(4, low * 1.5),
         param1=65,
-        param2=13,
+        param2=10,
         minRadius=low,
         maxRadius=min(high, min(h, w) // 8),
     )
@@ -210,8 +210,13 @@ def locate_source(image, source_points, homography, width, height, settings):
                 method = "source-hough"
                 if label and label not in resolved_components:
                     short_side = min(stats[label, cv2.CC_STAT_WIDTH], stats[label, cv2.CC_STAT_HEIGHT])
-                    radius = max(radius, min(short_side / 2, expected * 1.6))
+                    radius = max(radius, min(short_side / 2, expected * 1.2))
                     method = "source-hough-body"
+                    # Rank the body outline we will actually classify, rather
+                    # than an inner number patch or shadow's smaller circle.
+                    xs = np.clip(np.round(x + radius * np.cos(angles)).astype(int), 0, w - 1)
+                    ys = np.clip(np.round(y + radius * np.sin(angles)).astype(int), 0, h - 1)
+                    support = .8 * support + .2 * float(np.mean(edges[ys, xs] > 0))
                 candidates.append(
                     (float(x), float(y), float(radius), support * 1.02, method)
                 )
@@ -255,7 +260,7 @@ def locate_source(image, source_points, homography, width, height, settings):
         if not (0 <= table[0] <= width - 1 and 0 <= table[1] <= height - 1):
             continue
         if all(np.hypot(x - k[0], y - k[1]) > (radius + k[2]) *
-               (0.85 if method == "source-hough-body" and k[4] == method else 0.65) for k in kept):
+               (0.9 if method.startswith("source-hough") and k[4].startswith("source-hough") else 0.65) for k in kept):
             kept.append((x, y, radius, score, method))
     return (
         [

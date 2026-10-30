@@ -32,21 +32,13 @@ The lockfile pins the environment. `.env` files are not loaded automatically.
 It binds to loopback by default; expose it through your application's configured
 gateway when adding remote access/authentication.
 
-## Local development on modern macOS or Linux
+## One environment for development and deployment
 
-The Debian deployment pins above require Python 3.7. For a modern development
-machine, use the separate Python 3.12 dependency set (including OpenCV 4):
-
-```sh
-cd backend
-uv venv --python 3.12 .venv-local
-uv pip install --python .venv-local/bin/python -r requirements-local.txt
-.venv-local/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
-```
-
-Run checks with `.venv-local/bin/python -m pytest -q`. This local dependency set
-was tested separately; it does not change the Debian/Python 3.7 deployment target.
-Do not install the Python 3.7 project pins into a Python 3.12 environment.
+`pyproject.toml` and `uv.lock` define the supported Python 3.11–3.13 environment.
+Python 3.12 is the documented default. The Python 3.7 downgrade was reverted;
+Pydantic 1, Debian OpenCV 3.2 and the old `requirements-local.txt` are no longer
+installation paths. Use the frozen lockfile above on both development and
+server machines. This service uses Pydantic 2 and headless OpenCV 4.
 
 ## Public API
 
@@ -82,8 +74,37 @@ curl -sS -X POST http://127.0.0.1:8001/api/v1/camera/detect \
 ```
 
 The OpenAPI schemas are the public contract for later web/mobile clients. Use
-`AnalysisOptions`, `AnalysisResult`, `Ball`, `Counts`, `Geometry`, `Calibration`
-and `LensCalibration` from that contract when generating a client.
+`AnalysisOptions`, `AnalysisResult`, `Ball`, `Counts`, `Geometry`, `Calibration`,
+`LensCalibration`, `ShotsResult`, `PredictionResult` and `SimulationResult` from that contract when generating a client.
+
+## Moving to another table
+
+The routes and JSON vocabulary stay the same. The supported geometry is a
+rectangular six-pocket pool table; snooker rules, carom tables and arbitrary
+pocket arrangements are outside the current physics model.
+
+1. Measure the inner playing surface (between cushion noses) and ball diameter
+   in the same unit. Set `settings.table_ratio = long_side / short_side` and
+   `settings.ball_radius_ratio = ball_diameter / (2 * short_side)`. The supported
+   ranges are 1–3 and 0.012–0.06 respectively. The defaults are starting values,
+   not measurements inferred from a perspective image.
+2. Use automatic corners first. If the image contains several cloth-colored
+   regions, supply `cloth_hue` (OpenCV HSV 0–179), `hue_tolerance` and
+   `saturation_min`. Explicit color settings apply to both calibration and
+   detection, for uploads and server-camera requests. With no hue override,
+   calibration considers several color masks, including neutral cloth.
+3. If automatic corners are inaccurate or partly obscured, supply four manual
+   inner-cushion corners clockwise, starting along the long side. Recalibrate
+   after moving the camera or changing resolution, crop or lens correction.
+4. Send the returned `detection.balls` and `detection.geometry.table_ratio` to
+   the shot endpoints. Keep the ratio with its layout; using the default ratio
+   for a differently shaped table changes collision angles and clearances.
+
+The verification client's **Settings → Table setup** converts physical
+measurements to these settings and exposes cloth hue/saturation controls.
+Existing ratio/radius sliders remain available. Photos require **Apply to image**
+after a setting change; the live camera uses updated settings on the next frame.
+There is no table-specific endpoint or stored server-side table state.
 
 ## Coordinate mathematics
 
@@ -298,7 +319,9 @@ does not import that client. Later apps can consume the same OpenAPI contract.
 JPEG, PNG and WebP inputs are supported. Limits: 12 MiB, 16 megapixels, 100–10,000
 pixels per side. `413` means exceeded limits, `415` unsupported format, `422`
 invalid image/options/calibration, `503` busy or unavailable camera. Busy responses
-include `Retry-After: 1`. One expensive operation runs per process; docs and health
+include `Retry-After: 1`. The verification client serializes frame and shot requests through one queue,
+skips cancelled queued requests, and briefly retries explicit busy responses.
+One expensive operation runs per process; docs and health
 remain available. Inputs/results are processed in memory and not stored.
 
 This is a deterministic recognizer, not a guarantee of flawless measurements.
@@ -332,3 +355,36 @@ curl -sS http://127.0.0.1:8001/api/v1/shots/simulate \
 
 Results describe hypothetical motion, not a calibrated forecast for the physical
 table. They contain coordinates/events only, without pixels or rendering styles.
+
+## Real-photo evaluation
+
+Run the same API against local files and inspect numerical results plus offline
+annotations (the API itself still returns only JSON):
+
+```sh
+uv run --frozen python -m scripts.evaluate_images evaluation-output/photos/table-1.png evaluation-output/photos/table-2.png evaluation-output/photos/table-3.png
+```
+
+Use `--config options.json` for per-table settings/manual calibration and
+`--output path` to change the output directory. Default output is the ignored
+`evaluation-output/` folder. No workflow or hosted service is needed.
+
+The original photos stay local in the ignored `evaluation-output/photos/`
+directory, named `table-1.png` through `table-3.png`. Photo regression tests also
+accept `EBILARD_PHOTO_DIR` and skip explicitly when the optional inputs are absent.
+The synthetic multi-table tests run on a fresh checkout without these files.
+
+The three user-supplied 1920×1080 frames are different layouts on one physical
+table. Approximate manual center annotations identify 11, 3 and 17 visible
+on-cloth balls. Default automatic recognition currently matches **7, 3 and 16**
+respectively, with no unmatched rail/pocket candidates under the test's 25-pixel
+association tolerance. That tolerance is not claimed measurement accuracy.
+The sparse frame previously returned eight candidates, including five false
+cushion detections. Inner seam selection now removes that chain; body-outline
+ranking also avoids some shadow/number-patch centers and preserves the cue in
+the crowded scenes.
+
+Four rail/occlusion-adjacent balls remain missed in the first frame and one in
+the third. Several full/half categories are visually ambiguous or incorrect.
+These fixtures preserve confirmed improvements and record current recall;
+they do not demonstrate perfect recognition or accuracy on every physical table.

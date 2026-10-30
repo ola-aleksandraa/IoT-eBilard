@@ -6,10 +6,11 @@ categories, counts, normalized 2D coordinates, decision evidence and homography
 matrices. All visualization belongs to the consuming application.
 
 See the [backend startup instructions](backend/README.md#start-and-api-reference)
-for its Python 3.7.3 / Debian target and dependencies. Run from `backend/`:
+for the Python 3.11–3.13 runtime restored by the downgrade revert. Run from `backend/`:
 
 ```sh
-python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+uv sync --python 3.12 --frozen
+uv run --frozen uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
 
 Interactive API: **[http://127.0.0.1:8001/docs](http://127.0.0.1:8001/docs)**.
