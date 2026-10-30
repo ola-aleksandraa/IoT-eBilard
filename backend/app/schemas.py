@@ -1,7 +1,7 @@
 """Versioned numerical contracts. Rendering and test fixtures are client concerns."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Literal, List
 
 from pydantic import BaseModel, Field, validator
 
