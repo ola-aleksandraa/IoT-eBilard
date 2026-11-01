@@ -11,6 +11,20 @@ const frame = (balls: Ball[]): Detection => ({ balls,
   cloth_hue: 80, processing_ms: 20, warnings: [] })
 
 describe('fixed-camera calibration', () => {
+  it('requires agreement on lens correction and retains a matching corner/lens pair', () => {
+    const c = new CornerConsensus()
+    const corrected = (k: number): Calibration => ({ ...shifted((k + .4) * .02), lens: {
+      image_width: 1280, image_height: 720,
+      camera_matrix: [[1280, 0, 639.5], [0, 1280, 359.5], [0, 0, 1]], distortion: [k, 0, 0, 0, 0],
+    } })
+    for (let i = 0; i < 6; i++) expect(c.add(calibration)).toBeNull()
+    for (let i = 0; i < 7; i++) expect(c.add(corrected(-.4))).toBeNull()
+    expect(c.add(corrected(-.6))).toBeNull()
+    expect(c.add(corrected(-.4))).toBeNull()
+    expect(c.add(corrected(-.4))).toBeNull()
+    const locked = c.add(corrected(-.4))!
+    expect(locked).toEqual(corrected(-.4))
+  })
   it('requires eight observations and returns the robust center of their corners', () => {
     const c = new CornerConsensus()
     for (const delta of [-.002, .001, .002, -.001, 0, -.001, .001]) expect(c.add(shifted(delta))).toBeNull()

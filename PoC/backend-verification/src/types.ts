@@ -1,5 +1,6 @@
 export type Point = { x: number; y: number }
-export type Calibration = { corners: Point[]; image_width: number; image_height: number }
+export type LensCalibration = { image_width: number; image_height: number; camera_matrix: number[][]; distortion: number[] }
+export type Calibration = { corners: Point[]; image_width: number; image_height: number; lens?: LensCalibration | null; native_corners?: Point[] | null }
 export type Settings = {
   table_ratio: number; ball_radius_ratio: number; cloth_hue: number | null;
   hue_tolerance: number; saturation_min: number; split_touching: boolean;

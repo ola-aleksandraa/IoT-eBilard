@@ -154,7 +154,7 @@ def inner_cushion_edges(image, quad):
     return refined
 
 
-def find_table(image, settings=None):
+def find_table(image, settings=None, *, allow_curved=False):
     height, width = image.shape[:2]
     scale = min(1, 1000 / max(width, height))
     small = cv2.resize(image, None, fx=scale, fy=scale)
@@ -191,14 +191,14 @@ def find_table(image, settings=None):
             coverage = np.count_nonzero((mask > 0) & (polygon > 0)) / max(1, np.count_nonzero(polygon))
             convexity = min(1., area / max(1, cv2.contourArea(hull)))
             straightness = float(np.exp(-residual / 2))
-            if coverage < .78 or convexity < .80 or straightness < .35:
+            if coverage < .78 or convexity < .80 or straightness < (.08 if allow_curved else .35):
                 continue
             score = .40 * coverage + .25 * convexity + .25 * straightness + .10 * min(1, area / (h * w) * 2)
             if best is None or score > best[0]:
-                best = (score, points)
+                best = (score, points, contour[:, 0, :].astype(float))
     if best is None:
         return None
-    score, points = best
+    score, points, boundary = best
     points = inner_cushion_edges(small, points)
     normalized = [{"x": float(np.clip(x / scale / (width - 1), 0, 1)), "y": float(np.clip(y / scale / (height - 1), 0, 1))} for x, y in points]
-    return {"corners": normalized, "quality": float(round(score, 3)), "method": "color consensus + robust edge intersections"}
+    return {"boundary": boundary / scale, "corners": normalized, "quality": float(round(score, 3)), "method": "color consensus + robust edge intersections"}

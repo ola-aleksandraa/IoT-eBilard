@@ -19,10 +19,26 @@ export class CornerConsensus {
     if (previous && (previous.image_width !== value.image_width || previous.image_height !== value.image_height)) this.reset()
     this.samples.push(structuredClone(value))
     this.samples = this.samples.slice(-12)
-    const aggregate = (samples: Calibration[]) => ({ ...value, corners: value.corners.map((_, i) => ({ x: median(samples.map(s => s.corners[i].x)), y: median(samples.map(s => s.corners[i].y)) })) })
-    const center = aggregate(this.samples)
+    const aggregate = (samples: Calibration[]) => {
+      const corners = value.corners.map((_, i) => ({ x: median(samples.map(s => s.corners[i].x)), y: median(samples.map(s => s.corners[i].y)) }))
+      if (!value.lens) return { ...value, corners }
+      // Pick an actual central calibration: averaging corners while taking a
+      // different frame's lens would mix coordinate spaces and bias the lock.
+      const k = median(samples.map(s => s.lens!.distortion[0]))
+      return samples.reduce((best, sample) => {
+        const cost = (s: Calibration) => Math.abs(s.lens!.distortion[0] - k) + s.corners.reduce((sum, p, i) => sum + Math.hypot(p.x - corners[i].x, p.y - corners[i].y), 0)
+        return cost(sample) < cost(best) ? sample : best
+      })
+    }
+    const compatible = this.samples.filter(s => {
+      if (!s.lens || !value.lens) return !s.lens && !value.lens
+      return JSON.stringify(s.lens.camera_matrix) === JSON.stringify(value.lens.camera_matrix)
+        && s.lens.distortion.length === value.lens.distortion.length
+        && s.lens.distortion.every((k, i) => Math.abs(k - value.lens!.distortion[i]) <= .025)
+    })
+    const center = aggregate(compatible)
     const diagonal = Math.hypot(value.image_width, value.image_height)
-    const inliers = this.samples.filter(sample => sample.corners.every((p, i) => Math.hypot((p.x - center.corners[i].x) * value.image_width, (p.y - center.corners[i].y) * value.image_height) / diagonal <= 0.004))
+    const inliers = compatible.filter(sample => sample.corners.every((p, i) => Math.hypot((p.x - center.corners[i].x) * value.image_width, (p.y - center.corners[i].y) * value.image_height) / diagonal <= 0.004))
     // Consecutive recent agreement avoids locking just after the camera moves.
     const recentStable = this.samples.slice(-3).every(sample => inliers.includes(sample))
     this.accepted = Math.min(inliers.length, recentStable ? this.target : this.target - 1)

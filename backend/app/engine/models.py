@@ -23,31 +23,6 @@ class Settings(StrictModel):
     split_touching: bool = True
 
 
-class Calibration(StrictModel):
-    corners: list[Point] = Field(min_length=4, max_length=4)
-    image_width: int = Field(gt=0, le=10000)
-    image_height: int = Field(gt=0, le=10000)
-
-    @model_validator(mode="after")
-    def valid_quad(self):
-        points = np.float32([[p.x, p.y] for p in self.corners])
-        # Clockwise image coordinates have positive area; the first edge
-        # maps to canvas width and should follow the physical long side.
-        if not cv2.isContourConvex(points) or cv2.contourArea(points, oriented=True) < 0.025:
-            raise ValueError("Corners must form a clockwise, convex table; start along its long edge.")
-        return self
-
-
-class DetectionRequest(StrictModel):
-    calibration: Calibration
-    settings: Settings = Field(default_factory=Settings)
-
-
-class LiveRequest(StrictModel):
-    calibration: Calibration | None = None
-    settings: Settings = Field(default_factory=Settings)
-
-
 class LensCalibration(StrictModel):
     image_width: int = Field(gt=0, le=10000)
     image_height: int = Field(gt=0, le=10000)
@@ -64,6 +39,45 @@ class LensCalibration(StrictModel):
         if len(self.distortion) not in (4, 5, 8, 12, 14):
             raise ValueError("OpenCV distortion requires 4, 5, 8, 12, or 14 coefficients.")
         return self
+
+
+class Calibration(StrictModel):
+    corners: list[Point] = Field(min_length=4, max_length=4)
+    image_width: int = Field(gt=0, le=10000)
+    image_height: int = Field(gt=0, le=10000)
+    lens: LensCalibration | None = Field(default=None, description=(
+        "Automatic table-derived lens correction. Corners refer to corrected pixels; "
+        "reuse the whole calibration with original frames from the same view."
+    ))
+    native_corners: list[Point] | None = Field(default=None, min_length=4, max_length=4, description=(
+        "Original coarse rail intersections retained with an automatic lens fit for native-pixel "
+        "ball proposal sizing. Table coordinates always use the corrected corners."
+    ))
+
+    @model_validator(mode="after")
+    def valid_quad(self):
+        if self.lens and (self.lens.image_width, self.lens.image_height) != (self.image_width, self.image_height):
+            raise ValueError("Embedded lens resolution must match the table calibration.")
+        if self.native_corners is not None:
+            native = np.float32([[p.x, p.y] for p in self.native_corners])
+            if self.lens is None or not cv2.isContourConvex(native) or cv2.contourArea(native, oriented=True) < .025:
+                raise ValueError("Native corners require a lens and a clockwise convex quadrilateral.")
+        points = np.float32([[p.x, p.y] for p in self.corners])
+        # Clockwise image coordinates have positive area; the first edge
+        # maps to canvas width and should follow the physical long side.
+        if not cv2.isContourConvex(points) or cv2.contourArea(points, oriented=True) < 0.025:
+            raise ValueError("Corners must form a clockwise, convex table; start along its long edge.")
+        return self
+
+
+class DetectionRequest(StrictModel):
+    calibration: Calibration
+    settings: Settings = Field(default_factory=Settings)
+
+
+class LiveRequest(StrictModel):
+    calibration: Calibration | None = None
+    settings: Settings = Field(default_factory=Settings)
 
 
 class Ball(StrictModel):
