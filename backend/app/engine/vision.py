@@ -8,6 +8,7 @@ import numpy as np
 from .models import Ball, DetectionRequest, Settings
 from .classification import classify, appearance, classify_features, white_balance, enforce_unique_specials
 from .localization import locate_source, orient_corners, split_component
+from .lens import undistort_points, source_outline
 
 OUTPUT_WIDTH = 1000
 
@@ -68,20 +69,21 @@ def detect(image: np.ndarray, request: DetectionRequest) -> dict:
     if (source_w, source_h) != (calibration.image_width, calibration.image_height):
         raise ValueError("Calibration resolution differs from this image. Recalibrate or load a matching frame.")
     source_points = np.float32([[p.x * (source_w - 1), p.y * (source_h - 1)] for p in calibration.corners])
+    native_points = np.float32([[p.x * (source_w - 1), p.y * (source_h - 1)] for p in calibration.native_corners]) if calibration.native_corners else None
     width, height = OUTPUT_WIDTH, round(OUTPUT_WIDTH / settings.table_ratio)
     target_points = np.float32([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]])
     homography = cv2.getPerspectiveTransform(source_points, target_points)
-    balance = white_balance(image, source_points)
+    balance = white_balance(image, native_points if native_points is not None else source_outline(source_points, calibration.lens))
     expected = height * settings.ball_radius_ratio
-    candidates, _, _, hue = locate_source(image, source_points, homography, width, height, settings)
+    candidates, _, _, hue = locate_source(image, source_points, homography, width, height, settings, calibration.lens, native_points)
     balls = []
     features = []
     for index, (sx, sy, source_radius, _, method) in enumerate(candidates, 1):
         features.append(appearance(image, sx, sy, source_radius, balance))
         kind, confidence, reason, color, white_fraction = classify_features(features[-1])
-        x, y = cv2.perspectiveTransform(np.float32([[[sx, sy]]]), homography)[0, 0]
+        source = undistort_points([[sx, sy]], calibration.lens)[0]
+        x, y = cv2.perspectiveTransform(np.float32([[source]]), homography)[0, 0]
         radius = expected
-        source = [sx, sy]
         balls.append(Ball(id=index, kind=kind, x=round(float(x) / (width - 1), 5), y=round(float(y) / (height - 1), 5),
                           radius=round(radius / height, 5), source_x=round(float(source[0]) / (source_w - 1), 5),
                           source_y=round(float(source[1]) / (source_h - 1), 5), color=color, confidence=confidence,

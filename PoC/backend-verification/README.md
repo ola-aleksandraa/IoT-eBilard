@@ -33,6 +33,11 @@ The original PoC is unchanged and is not needed at runtime.
 - Fixed-camera mode locks corners after eight consistent observations and
   stabilizes the displayed balls. **Camera is unstable** instead recalibrates
   each frame. **Recalibrate corners** discards the lock after camera movement.
+  If the backend detects supported radial lens distortion, the same lock also
+  retains its correction and reuses it on subsequent original frames. Saving
+  and restoring corners preserves the complete lens calibration too. Raw camera
+  overlays follow the curved rails; the virtual table uses corrected geometry.
+  Inconsistent lens estimates are excluded from the eight-frame consensus.
 - **Try a sample image** loads the local synthetic fixture and recognizes it
   immediately. **Settings → Upload photo** does the same for JPEG, PNG or WebP.
   EXIF orientation is handled locally; the pixels displayed are those uploaded.

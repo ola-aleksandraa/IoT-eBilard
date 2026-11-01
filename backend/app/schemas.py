@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .engine.models import Calibration, LensCalibration, LiveRequest, Settings, StrictModel
 
@@ -16,6 +16,12 @@ class AnalysisOptions(LiveRequest):
         "Optional internal lens correction. Source coordinates then refer to undistorted, EXIF-oriented pixels."
     ))
     client_frame_id: str | None = Field(default=None, max_length=128, description="Optional caller frame token, echoed unchanged.")
+
+    @model_validator(mode="after")
+    def one_lens(self):
+        if self.lens is not None and self.calibration is not None and self.calibration.lens is not None:
+            raise ValueError("Use calibration.lens or the explicit lens option, not both.")
+        return self
 
 
 class Source(StrictModel):

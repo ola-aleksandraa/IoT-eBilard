@@ -211,6 +211,41 @@ convex and cover at least 2.5% of the source. Reuse requires matching camera
 position, crop, resolution, EXIF orientation and lens correction. Resolution is
 validated; matching dimensions alone cannot prove the camera has not moved.
 
+Automatic calibration also checks the four visible rail boundaries for radial
+barrel/pincushion distortion. It fits a single radial coefficient with the optical
+center fixed at the image center, using straight rails as the reference. Pocket
+mouths and corner cut-outs are excluded from the fit. This implements the same
+straight-line constraint as aligning each row of three pockets, with many more
+boundary samples. Perspective alone does not trigger correction.
+
+A fit is accepted only when several rails and held-out samples improve, the
+radial map remains monotonic, and the corrected image passes table detection
+again. Weak evidence, occlusion, excessive distortion or an inconsistent fit
+leave ordinary automatic calibration in place. This is a single-view geometric
+estimate, not full fisheye-camera or checkerboard calibration. It assumes a
+centered radial lens; tangential distortion and an off-center optical axis are
+not estimated.
+
+When accepted, the returned `calibration.lens` contains the complete OpenCV
+intrinsics/distortion to reuse. `calibration.corners` are in corrected source
+coordinates. `native_corners` retains the original coarse quadrilateral for
+native-pixel ball proposal sizing; it does not define the final table mapping.
+Keep the **whole returned calibration**, including these fields, and send it as
+`config.calibration` with later **original, uncorrected** frames. The same behavior
+applies to image and camera endpoints, with no new routes or server session.
+An explicit manual calibration bypasses fitting; one with an embedded lens uses
+that lens exactly. A locked frame never refits corners or lens parameters.
+
+Ball silhouettes and appearance are measured on native pixels to avoid
+resampling small balls. Detection masks follow the curved raw rail outline,
+while rail/pocket rejection and ball positions use lens correction followed by
+the table homography. `source.lens_corrected=true` and
+`geometry.source_space=undistorted_oriented_pixels` identify this coordinate
+space. To overlay on the original camera image, distort the corrected source
+points back with `calibration.lens`; a straight corrected rail is a curve in the
+original frame. The verification client does this for markers, rails and manual
+corner editing.
+
 `table_ratio=physical_cloth_width/physical_cloth_height` (1–3).
 `ball_radius_ratio=ball_diameter/(2*physical_cloth_height)` (0.012–0.06).
 For 57.15 mm balls and a 1120 mm short cloth dimension, use about 0.0255.
@@ -235,6 +270,9 @@ match the oriented input; OpenCV distortion vectors may have 4, 5, 8, 12 or 14
 coefficients. Correction happens internally. Send the same original pixels and
 lens parameters on calibration and detection; no canonical-image round trip is
 needed. Do not send already corrected pixels with the lens parameters again.
+An explicit top-level `lens` takes priority over automatic fitting. Use either
+that option or `calibration.lens`; sending both is rejected to avoid ambiguous
+or double correction.
 
 ## Server camera
 
@@ -336,7 +374,8 @@ assumptions rather than a measured physical-table model. No minimum RAM or Raspb
 
 References: [FastAPI response contracts](https://fastapi.tiangolo.com/tutorial/response-model/),
 [modular applications](https://fastapi.tiangolo.com/tutorial/bigger-applications/),
-[OpenCV homography mathematics](https://docs.opencv.org/4.x/d9/dab/tutorial_homography.html).
+[OpenCV homography mathematics](https://docs.opencv.org/4.x/d9/dab/tutorial_homography.html),
+[OpenCV radial distortion model](https://docs.opencv.org/4.13.0/dc/dbb/tutorial_py_calibration.html).
 
 ## Shot requests
 
@@ -373,6 +412,14 @@ The original photos stay local in the ignored `evaluation-output/photos/`
 directory, named `table-1.png` through `table-3.png`. Photo regression tests also
 accept `EBILARD_PHOTO_DIR` and skip explicitly when the optional inputs are absent.
 The synthetic multi-table tests run on a fresh checkout without these files.
+
+The evaluator also writes `*-corrected.jpg`, `*-comparison.jpg` when an automatic
+lens is accepted, and `*-table.jpg` for the perspective-corrected cloth. These
+are offline QA files only. The fisheye tests recover known synthetic radial
+distortion, check pocket-row straightness, reject straight/unsupported scenes,
+and verify that later frames reuse a locked fit without recalibration. Local
+photo checks independently compare approximate pocket rows and preserve the
+existing one-to-one ball association and cue checks.
 
 The three user-supplied 1920×1080 frames are different layouts on one physical
 table. Approximate manual center annotations identify 11, 3 and 17 visible

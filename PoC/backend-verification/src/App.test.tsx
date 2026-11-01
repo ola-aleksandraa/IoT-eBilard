@@ -112,6 +112,21 @@ it('switching to unstable mode resumes automatic corner updates', async () => {
   expect(screen.getByRole('status').textContent).toContain('updating table corners live')
 })
 
+it('locks and resends the automatic lens on later frames and clears it on recalibration', async () => {
+  const calibration = { ...found.calibration!, lens: { image_width: 1280, image_height: 720,
+    camera_matrix: [[1280, 0, 639.5], [0, 1280, 359.5], [0, 0, 1]], distortion: [-.4, 0, 0, 0, 0] } }
+  mocks.recognize.mockResolvedValue({ ...found, calibration })
+  render(<App />)
+  await act(async () => { await vi.advanceTimersByTimeAsync(4500) })
+  expect(mocks.recognize.mock.lastCall![2]).toEqual(calibration)
+  const overlay = screen.getByLabelText('Live table and ball detections')
+  expect(overlay.querySelector('polygon')!.getAttribute('points')!.split(' ')).toHaveLength(96)
+  expect(Number(overlay.querySelector('circle')!.getAttribute('cx'))).not.toBeCloseTo(.3 * 1279)
+  fireEvent.click(screen.getByRole('button', { name: 'Recalibrate corners' }))
+  await act(async () => {})
+  expect(mocks.recognize.mock.lastCall![2]).toBeNull()
+})
+
 
 it('loads and recognizes a local photo immediately and reapplies saved corners to it', async () => {
   mocks.stream = null

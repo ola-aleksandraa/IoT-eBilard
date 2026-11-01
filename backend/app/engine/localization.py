@@ -69,19 +69,26 @@ def split_component(component, expected):
     return result
 
 
-def locate_source(image, source_points, homography, width, height, settings):
+def locate_source(image, source_points, homography, width, height, settings, lens=None, native_points=None):
+    from .lens import distort_points, undistort_points, source_outline
     scale = min(1.0, 1280 / max(image.shape[:2]))
     small = cv2.resize(image, None, fx=scale, fy=scale)
     h, w = small.shape[:2]
-    polygon = np.float32(source_points * scale)
+    polygon = np.float32(source_outline(source_points, lens) * scale)
     area = np.zeros((h, w), np.uint8)
-    cv2.fillConvexPoly(area, np.int32(polygon), 255)
-    inverse = np.linalg.inv(homography)
+    cv2.fillPoly(area, [np.int32(polygon)], 255)
+    # Circle proposals use a smooth native-image scale approximation, as their
+    # silhouettes are measured in native pixels. The exact nonlinear mapping
+    # below is used for rail rejection and final table positions.
+    native_points = distort_points(source_points, lens) if native_points is None else native_points
+    native_homography = cv2.getPerspectiveTransform(np.float32(native_points),
+        np.float32([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]])) if lens else homography
+    inverse = np.linalg.inv(native_homography)
     physical_radius = height * settings.ball_radius_ratio
 
     def expected_at(x, y):
         table = cv2.perspectiveTransform(
-            np.float32([[[x / scale, y / scale]]]), homography
+            np.float32([[[x / scale, y / scale]]]), native_homography
         )[0, 0]
         probes = np.float32(
             [[table, table + [physical_radius, 0], table + [0, physical_radius]]]
@@ -97,9 +104,12 @@ def locate_source(image, source_points, homography, width, height, settings):
             ),
         )
 
-    center = polygon.mean(axis=0)
+    # Probe four corners and the center; dense outline sampling must not weight
+    # the long rails differently when choosing the contrast filter's scale.
+    probes = native_points * scale
+    center = probes.mean(axis=0)
     radii = [
-        expected_at(*point) for point in [center, *(center + 0.75 * (polygon - center))]
+        expected_at(*point) for point in [center, *(center + 0.75 * (probes - center))]
     ]
     low, high = max(2, int(min(radii) * 0.55)), max(4, int(max(radii) * 1.5))
     hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
@@ -223,7 +233,7 @@ def locate_source(image, source_points, homography, width, height, settings):
     kept = []
     for x, y, radius, score, method in sorted(candidates, key=lambda p: -p[3]):
         table = cv2.perspectiveTransform(
-            np.float32([[[x / scale, y / scale]]]), homography
+            np.float32([undistort_points([[x / scale, y / scale]], lens)]), homography
         )[0, 0]
         # Reject pocket silhouettes at the six rail intersections.
         pockets = [
