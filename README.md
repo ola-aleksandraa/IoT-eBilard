@@ -15,6 +15,14 @@ uv run --frozen uvicorn app.main:app --host 127.0.0.1 --port 8001
 
 Interactive API: **[http://127.0.0.1:8001/docs](http://127.0.0.1:8001/docs)**.
 
+**[frontend/](frontend/README.md)** is the React + TypeScript + Panda CSS
+application (pnpm). Run from `frontend/`:
+
+```sh
+pnpm install
+pnpm dev
+```
+
 **[PoC/backend-verification/](PoC/backend-verification/README.md)** is a separate
 React client restoring the first PoC's camera/table interface, calibration,
 display stabilization, shot suggestions and cue animation. It connects to the root backend, uploads local/browser-camera pixels,
