@@ -4,8 +4,8 @@ import TableCanvas from './TableCanvas'
 import SourceView from './SourceView'
 import { useCamera } from './useCamera'
 import { BallStabilizer, CornerConsensus } from './stability'
-import { api, BALL_COLORS, BALL_NAMES, DEFAULT_SETTINGS, downloadJSON, imageBlob, POCKET_NAMES, SHOT_MESSAGES } from './types'
-import type { Calibration, Detection, Frame, LiveResponse, MotionPrediction, Point, Settings, Shot, ShotsResponse } from './types'
+import { api, BALL_COLORS, BALL_NAMES, DEFAULT_SETTINGS, downloadJSON, imageBlob, POCKET_NAMES, POWER_LEVEL_COLORS, POWER_LEVEL_NAMES, SHOT_MESSAGES } from './types'
+import type { Calibration, Detection, Frame, LiveResponse, MotionCompare, MotionPrediction, Point, PowerLevel, Settings, Shot, ShotsResponse } from './types'
 
 const EMPTY_BALLS: Detection['balls'] = []
 const EMPTY_SHOTS: Shot[] = []
@@ -40,6 +40,12 @@ export default function App() {
   const [aim, setAim] = useState<Point | null>(null)
   const [motion, setMotion] = useState<MotionPrediction | null>(null)
   const [motionElapsed, setMotionElapsed] = useState(0)
+  // Shot-strength mode: drag-derived power, or a named real-world preset.
+  const [powerMode, setPowerMode] = useState<'drag' | PowerLevel>('drag')
+  // Same aim rolled out at all three power levels for comparing the spread.
+  const [compare, setCompare] = useState<MotionCompare | null>(null)
+  const [compareIdx, setCompareIdx] = useState<number | null>(null)
+  const [comparing, setComparing] = useState(false)
   const [dimensions, setDimensions] = useState({ width: 1280, height: 720 })
   const [saved, setSaved] = useState<Calibration | null>(() => {
     try {
@@ -76,19 +82,41 @@ export default function App() {
   const aimKey = aim ? `${aim.x.toFixed(3)}:${aim.y.toFixed(3)}` : ''
   const cueBall = balls.find(ball => ball.kind === 'cue')
   useEffect(() => {
-    if (!aimMode || !aim || !cueBall) { setMotion(null); setMotionElapsed(0); return }
+    if (!aimMode || !aim || !cueBall) { setMotion(null); setMotionElapsed(0); setCompare(null); setCompareIdx(null); return }
+    setCompare(null)
     const controller = new AbortController()
     const timer = setTimeout(() => {
-      // Power (0-1) comes from the aiming drag distance, like drawing back the cue.
+      // Power comes from the aiming drag distance (like drawing back the cue)
+      // or from the selected real-world preset (soft / medium / hard).
       const drag = Math.hypot((aim.x - cueBall.x) * ratio, aim.y - cueBall.y)
       api<MotionPrediction>('/shots/simulate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
-        body: JSON.stringify({ balls, table_ratio: ratio, aim_x: aim.x, aim_y: aim.y, power: Math.min(1, drag / 0.85) }),
+        body: JSON.stringify({ balls, table_ratio: ratio, aim_x: aim.x, aim_y: aim.y,
+          power: powerMode === 'drag' ? Math.min(1, drag / 0.85) : powerMode }),
       }).then(roll => { setMotion(roll); setMotionElapsed(0) }).catch(() => { if (!controller.signal.aborted) setMotion(null) })
     }, 90)
     return () => { clearTimeout(timer); controller.abort() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aimMode, aimKey, ballsKey, ratio])
+  }, [aimMode, aimKey, ballsKey, ratio, powerMode])
+
+  // Roll the same aim at all three real-world power levels; chips below play
+  // each level and the canvas rings every level's resting layout.
+  async function runCompare() {
+    if (!aim || !cueBall) return
+    setComparing(true); setCompare(null); setCompareIdx(null)
+    try {
+      const data = await api<MotionCompare>('/shots/simulate/compare', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ balls, table_ratio: ratio, aim_x: aim.x, aim_y: aim.y }),
+      })
+      setCompare(data)
+    } catch (reason) { setError((reason as Error).message) }
+    finally { setComparing(false) }
+  }
+
+  function playLevel(level: MotionCompare['levels'][number], index: number) {
+    setCompareIdx(index); setMotion(level); setMotionElapsed(0)
+  }
 
   // Animate the predicted motion at 1× real time; the final resting layout stays on screen.
   useEffect(() => {
@@ -112,14 +140,16 @@ export default function App() {
     const pots = p.events.filter(event => event.type === 'pot')
     const cushions = p.events.filter(event => event.type === 'cushion').length
     const hit = contact ? `hit at ${contact.t.toFixed(2)} s, cut ${Math.round(contact.cut_angle ?? 0)}°` : 'hit'
+    const speed = p.speed_mps != null ? ` · ${p.speed_mps.toFixed(1)} m/s` : ''
     const potted = pots.length
       ? ` · potted: ${pots.map(event => `ball ${event.ball} → ${POCKET_NAMES[event.pocket ?? 0]}`).join(', ')}`
       : ' · nothing potted'
-    return `Ball ${p.first_ball_id} ${hit}${potted} · ${cushions} cushion${cushions === 1 ? '' : 's'}`
+    return `Ball ${p.first_ball_id} ${hit}${speed}${potted} · ${cushions} cushion${cushions === 1 ? '' : 's'}`
   }
 
   function toggleAim() {
     setAimMode(previous => !previous); setAim(null); setMotion(null); setMotionElapsed(0)
+    setCompare(null); setCompareIdx(null)
   }
 
   // Sequential sampling, never a queue of stale frames. Camera/settings changes
@@ -322,7 +352,7 @@ export default function App() {
             {busy && (isLive || frame) && <div className="processing-label"><Loader2 className="spin" size={14} /> Detecting…</div>}
           </div>
         </section>
-        <section className="view-panel"><div className="view-heading"><h2>Virtual table</h2><span className="view-caption">{result ? `${balls.length} BALL${balls.length === 1 ? '' : 'S'} DETECTED` : 'WAITING FOR A TABLE'}</span></div><div className="virtual-stage"><TableCanvas balls={balls} ratio={ratio} selected={selected} onSelect={setSelected} showLabels={showIds} showGrid={showGrid} shots={shotPlan?.status === 'ok' ? shotPlan.shots : EMPTY_SHOTS} activeShot={activeShot} aimMode={aimMode} aim={aim} motion={motion} motionElapsed={motionElapsed} onAim={point => setAim(point)} /></div>{balls.length > 0 && <div className="aim-row"><button className={`aim-toggle ${aimMode ? 'active' : ''}`} aria-pressed={aimMode} onClick={toggleAim}><Crosshair size={13} /> {aimMode ? 'Aim cue: on' : 'Aim cue'}</button>{aimMode && <span className="shot-note" aria-label="Cue prediction" role="status">{motionNote(motion)}</span>}</div>}{showShots && shotPlan && (shotPlan.status === 'ok'
+        <section className="view-panel"><div className="view-heading"><h2>Virtual table</h2><span className="view-caption">{result ? `${balls.length} BALL${balls.length === 1 ? '' : 'S'} DETECTED` : 'WAITING FOR A TABLE'}</span></div><div className="virtual-stage"><TableCanvas balls={balls} ratio={ratio} selected={selected} onSelect={setSelected} showLabels={showIds} showGrid={showGrid} shots={shotPlan?.status === 'ok' ? shotPlan.shots : EMPTY_SHOTS} activeShot={activeShot} aimMode={aimMode} aim={aim} motion={motion} motionElapsed={motionElapsed} compare={compare} onAim={point => setAim(point)} /></div>{balls.length > 0 && <div className="aim-row"><button className={`aim-toggle ${aimMode ? 'active' : ''}`} aria-pressed={aimMode} onClick={toggleAim}><Crosshair size={13} /> {aimMode ? 'Aim cue: on' : 'Aim cue'}</button>{aimMode && aim && <div className="power-group" aria-label="Shot power">{(['drag', 'soft', 'medium', 'hard'] as const).map(mode => <button key={mode} className={`power-chip ${powerMode === mode ? 'active' : ''}`} onClick={() => setPowerMode(mode)}>{mode === 'drag' ? 'Drag' : POWER_LEVEL_NAMES[mode]}</button>)}<button className="text-button" disabled={comparing} onClick={() => { void runCompare() }} title="Roll this aim out at soft, medium and hard power">{comparing ? <Loader2 className="spin" size={13} /> : null} Compare</button></div>}{aimMode && <span className="shot-note" aria-label="Cue prediction" role="status">{motionNote(motion)}</span>}</div>}{compare && <div className="shot-list" aria-label="Power level comparison">{compare.levels.map((level, index) => <button key={level.level} className={`shot-chip ${compareIdx === index ? 'active' : ''}`} onClick={() => playLevel(level, index)}><i className="level-dot" style={{ background: POWER_LEVEL_COLORS[level.level] }} />{POWER_LEVEL_NAMES[level.level]} · {(level.speed_mps ?? 0).toFixed(1)} m/s · {motionNote(level)}</button>)}<span className="shot-note">Coloured rings on the table mark where each ball comes to rest for every level.</span></div>}{showShots && shotPlan && (shotPlan.status === 'ok'
           ? <div className="shot-list" aria-label="Predicted shots">{shotPlan.shots.length === 0 ? <span className="shot-note">No makeable shots found.</span> : shotPlan.shots.map((shot, index) => <button key={`${shot.target_ball_id}-${shot.pocket}-${shot.shot_type}`} className={`shot-chip ${index === activeShot ? 'active' : ''}`} onClick={() => setActiveShot(index)}>{index + 1}. {shot.shot_type === 'bank' ? 'Bank' : 'Direct'} · ball {shot.target_ball_id} → {POCKET_NAMES[shot.pocket]} · {Math.round(shot.score * 100)}%</button>)}</div>
           : <div className="shot-list"><span className="shot-note">{SHOT_MESSAGES[shotPlan.status]}</span></div>)}{balls.length > 0 && <div className="ball-legend" aria-label="Ball types">{(['cue', 'eight', 'solid', 'striped', 'unknown'] as const).filter(kind => kind !== 'unknown' || balls.some(ball => ball.kind === kind)).map(kind => <span key={kind}><i className={`mini-ball ${kind}`} style={{ '--ball-color': BALL_COLORS[kind] } as React.CSSProperties} />{BALL_NAMES[kind]}</span>)}</div>}</section>
       </div>

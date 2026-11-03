@@ -29,6 +29,41 @@ SIM_DT = 1.0 / 240.0        # integration step, seconds
 SIM_SAMPLE_EVERY = 6        # keep one pose every N steps (→ 25 ms pose spacing)
 SIM_MAX_SECONDS = 10.0
 
+# ── Real-world power levels (cue-ball speed at contact) ─────────────────
+# Reference ranges from billiards-physics literature (e.g. Dr. Dave
+# Billiards speed tables): soft ≈ 1.2–1.8 m/s, medium ≈ 2.2–2.8 m/s,
+# hard ≈ 3.2–4.0 m/s. Break shots (7–13 m/s) are a different regime and are
+# not modelled here. Engine scale: ENGINE_WIDTH px maps onto the playing-
+# field length below, which puts SIM_FRICTION = 420 px/s² at ≈ 0.84 m/s² —
+# inside the measured cloth rolling-deceleration range.
+REAL_TABLE_LENGTH_M = 2.0
+PX_PER_M = ENGINE_WIDTH / REAL_TABLE_LENGTH_M
+POWER_PRESETS_MPS = {"soft": 1.5, "medium": 2.5, "hard": 3.5}
+
+
+def resolve_power(power: float | str) -> dict:
+    """Normalise `power` (0-1 drag scale or a preset name) to engine units.
+
+    Returns {"level", "speed_mps", "speed_px", "power_frac"}: level is None for
+    plain numeric power, power_frac is the equivalent position on the 0-1
+    drag scale (SIM_MIN_SPEED..SIM_FULL_SPEED px/s).
+    """
+    if isinstance(power, str):
+        level = power.strip().lower()
+        if level not in POWER_PRESETS_MPS:
+            names = ", ".join(sorted(POWER_PRESETS_MPS))
+            raise ValueError(f"Unknown power preset {power!r}. Use: {names}.")
+        speed_mps = POWER_PRESETS_MPS[level]
+        speed_px = speed_mps * PX_PER_M
+    else:
+        level = None
+        clamped = min(1.0, max(0.0, float(power)))
+        speed_px = SIM_MIN_SPEED + (SIM_FULL_SPEED - SIM_MIN_SPEED) * clamped
+        speed_mps = speed_px / PX_PER_M
+    power_frac = (speed_px - SIM_MIN_SPEED) / max(1e-9, SIM_FULL_SPEED - SIM_MIN_SPEED)
+    return {"level": level, "speed_mps": speed_mps, "speed_px": speed_px,
+            "power_frac": min(1.0, max(0.0, power_frac))}
+
 
 def plan_shots(balls: Iterable, table_ratio: float, top_n: int = 5,
                include_bank: bool = True, include_blocked: bool = False) -> dict:
@@ -199,15 +234,18 @@ def predict_shot(balls, table_ratio: float, aim: tuple[float, float]) -> dict:
             "cue_deflect_path": deflect_path, "bank_point": None}
 
 
-def simulate_motion(balls, table_ratio: float, aim: tuple[float, float], power: float = 0.6) -> dict:
+def simulate_motion(balls, table_ratio: float, aim: tuple[float, float],
+                    power: float | str = 0.6) -> dict:
     """Real-motion prediction: roll the shot out with 2-D physics.
 
-    The cue ball leaves toward `aim` at a speed that rises with `power` (0-1; the
-    frontend derives power from the aiming drag distance). Balls collide
-    elastically, cushions absorb energy, everything stops under rolling friction,
-    and any ball entering a pocket mouth drops. Returns per-ball position paths
-    sampled every `dt` seconds (index = time / dt), the final resting layout and
-    the event timeline (contacts, cushion hits, pots).
+    The cue ball leaves toward `aim` at a speed set by `power`: a named preset
+    ("soft"/"medium"/"hard" → real-world m/s at contact per POWER_PRESETS_MPS)
+    or a 0-1 fraction of the normal stroke range (the frontend derives it from
+    the aiming drag distance). Balls collide elastically, cushions absorb
+    energy, everything stops under rolling friction, and any ball entering a
+    pocket mouth drops. Returns per-ball position paths sampled every `dt`
+    seconds (index = time / dt), the final resting layout, the power level and
+    speed actually used, and the event timeline (contacts, cushion hits, pots).
     Same coordinates as plan_shots: 0-1 table units in, 0-1 paths out; internally
     the simulation runs in plain engine-pixel floats for speed.
     """
@@ -239,8 +277,8 @@ def simulate_motion(balls, table_ratio: float, aim: tuple[float, float], power: 
     geometry = build_static_geometry([[0, 0], [W, 0], [W, H], [0, H]], ball_radius=R)
     pocket_centers = [[float(p[0]), float(p[1])] for p in geometry.pockets]
 
-    power = min(1.0, max(0.0, float(power)))
-    speed = SIM_MIN_SPEED + (SIM_FULL_SPEED - SIM_MIN_SPEED) * power
+    resolved = resolve_power(power)
+    speed = resolved["speed_px"]
 
     # Plain-float state for speed: positions / velocities as [x, y] lists.
     count = len(engine_balls)
@@ -428,7 +466,9 @@ def simulate_motion(balls, table_ratio: float, aim: tuple[float, float], power: 
             "first_ball_id": cue_contact["ball"] if cue_contact else None,
             "ghost_pos": [cue_contact["x"], cue_contact["y"]] if cue_contact else None,
             "cut_angle": cue_contact["cut_angle"] if cue_contact else None,
-            "power": power, "duration": round(steps * SIM_DT, 4),
+            "power": resolved["power_frac"], "power_level": resolved["level"],
+            "speed_mps": round(resolved["speed_mps"], 3),
+            "duration": round(steps * SIM_DT, 4),
             "dt": SIM_SAMPLE_EVERY * SIM_DT,
             "balls": [{"id": engine_balls[idx].track_id, "path": paths[idx],
                        "potted_t": potted_t[idx]} for idx in range(count)],

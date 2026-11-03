@@ -4,6 +4,8 @@ import cv2
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .trajectory.service import POWER_PRESETS_MPS
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
@@ -108,9 +110,52 @@ class PredictRequest(StrictModel):
 
 
 class SimulateRequest(StrictModel):
-    """One cue-stick aim rolled out with real 2-D physics (motion prediction)."""
+    """One cue-stick aim rolled out with real 2-D physics (motion prediction).
+
+    `power` is the stroke strength: a real-world preset name (soft / medium /
+    hard, see POWER_PRESETS_MPS) or a plain 0-1 fraction of the stroke range.
+    """
     balls: list[ShotBall] = Field(max_length=24)
     table_ratio: float = Field(default=2, ge=1, le=3)
     aim_x: float = Field(ge=0, le=1)
     aim_y: float = Field(ge=0, le=1)
-    power: float = Field(default=0.6, ge=0, le=1)
+    power: float | str = 0.6
+
+    @model_validator(mode="after")
+    def normalise_power(self):
+        value = self.power
+        if isinstance(value, str):
+            # Numeric strings behave like numbers; anything else must be a preset.
+            try:
+                value = float(value)
+            except ValueError:
+                level = value.strip().lower()
+                if level not in POWER_PRESETS_MPS:
+                    raise ValueError(
+                        "power must be 0-1 or one of the presets: "
+                        + ", ".join(sorted(POWER_PRESETS_MPS))) from None
+                self.power = level
+                return self
+        if not 0.0 <= float(value) <= 1.0:
+            raise ValueError("power must be between 0 and 1, or a preset name: "
+                             + ", ".join(sorted(POWER_PRESETS_MPS)))
+        return self
+
+
+class ComparePowerRequest(StrictModel):
+    """Roll one aim out at several real-world power levels (default: all three)."""
+    balls: list[ShotBall] = Field(max_length=24)
+    table_ratio: float = Field(default=2, ge=1, le=3)
+    aim_x: float = Field(ge=0, le=1)
+    aim_y: float = Field(ge=0, le=1)
+    levels: list[str] = Field(default_factory=lambda: list(POWER_PRESETS_MPS))
+
+    @model_validator(mode="after")
+    def valid_levels(self):
+        unknown = [level for level in self.levels if level.strip().lower() not in POWER_PRESETS_MPS]
+        if unknown:
+            raise ValueError("Unknown power levels: " + ", ".join(unknown)
+                             + ". Use: " + ", ".join(sorted(POWER_PRESETS_MPS)))
+        if not self.levels:
+            raise ValueError("levels must not be empty.")
+        return self

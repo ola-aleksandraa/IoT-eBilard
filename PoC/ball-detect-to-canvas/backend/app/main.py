@@ -11,7 +11,8 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import ValidationError
 
 from .demo import demo_response
-from .models import Calibration, DetectionRequest, LensCalibration, LiveRequest, PredictRequest, ShotsRequest, SimulateRequest
+from .models import (Calibration, ComparePowerRequest, DetectionRequest, LensCalibration,
+                     LiveRequest, PredictRequest, ShotsRequest, SimulateRequest)
 from .trajectory import plan_shots, predict_shot, simulate_motion
 from .vision import detect, image_url, suggest_corners
 
@@ -158,9 +159,35 @@ def shots_predict(request: PredictRequest):
 def shots_simulate(request: SimulateRequest):
     """Real-motion prediction: physics roll-out of one cue-stick aim.
 
-    Same inputs as /api/shots/predict plus `power` (0-1, shot strength). Every
-    ball gets a time-sampled position path, the response lists contacts, cushion
-    hits and pots in order, and which balls end up pocketed.
+    Same inputs as /api/shots/predict plus `power`: a named real-world preset
+    ("soft" ≈ 1.5 m/s, "medium" ≈ 2.5 m/s, "hard" ≈ 3.5 m/s at contact) or a
+    0-1 stroke fraction. Every ball gets a time-sampled position path, the
+    response reports the power level and speed used, and lists contacts,
+    cushion hits and pots in order, and which balls end up pocketed.
     """
-    return simulate_motion(request.balls, request.table_ratio,
-                           (request.aim_x, request.aim_y), request.power)
+    try:
+        return simulate_motion(request.balls, request.table_ratio,
+                               (request.aim_x, request.aim_y), request.power)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+
+
+@app.post("/api/shots/simulate/compare")
+def shots_simulate_compare(request: ComparePowerRequest):
+    """Roll the same aim out at several real-world power levels (default all three).
+
+    Each level is a full /api/shots/simulate roll-out (`level` marks the preset,
+    `speed_mps` the contact speed). Comparing the resting layouts shows how the
+    spread of the balls depends on the shot strength. `aim`/`power` (drag scale)
+    endpoints are unchanged; this endpoint only uses presets.
+    """
+    outcomes = [
+        {"level": level,
+         **simulate_motion(request.balls, request.table_ratio,
+                           (request.aim_x, request.aim_y), level)}
+        for level in (name.strip().lower() for name in request.levels)
+    ]
+    cue_ball_id = next((outcome["cue_ball_id"] for outcome in outcomes
+                        if outcome.get("cue_ball_id") is not None), None)
+    return {"status": "ok" if all(o["status"] == "ok" for o in outcomes) else "mixed",
+            "cue_ball_id": cue_ball_id, "levels": outcomes}

@@ -71,7 +71,8 @@ Select a ball on the canvas to inspect its type and coordinates. Keyboard users 
 | `POST /api/detect` | Multipart `file`, JSON `config` with calibration | Detection plus rectified, mask, and overlay images |
 | `POST /api/shots` | JSON `balls`, `table_ratio`, `top_n` | Ranked direct/bank shots with paths and scores |
 | `POST /api/shots/predict` | JSON `balls`, `table_ratio`, `aim_x/aim_y` | Ghost-ball preview of one aim: pocket, cut angle, paths |
-| `POST /api/shots/simulate` | JSON `balls`, `table_ratio`, `aim_x/aim_y`, `power` | Full physics roll-out: per-ball motion paths, events, pots |
+| `POST /api/shots/simulate` | JSON `balls`, `table_ratio`, `aim_x/aim_y`, `power` | Full physics roll-out: per-ball motion paths, events, pots. `power` is 0-1 or one of `soft`/`medium`/`hard` (real-world contact speeds) |
+| `POST /api/shots/simulate/compare` | JSON `balls`, `table_ratio`, `aim_x/aim_y`, optional `levels` | Same aim rolled out at several real-world power levels for comparing the ball spread |
 
 `/api/live` finds table corners when `calibration` is omitted/null. A lost table returns `{"table_status":"searching","calibration":null,"detection":null}`. The endpoint is stateless and never reuses a prior layout. Live responses omit debug images to reduce transfer and encoding overhead.
 
@@ -209,11 +210,20 @@ Two endpoints take a cue-stick direction as `aim_x/aim_y` — 0-1 table coordina
 
 `POST /api/shots/predict` answers *"where does this aim go?"* for a single direction: first ball on the line, ghost-ball contact point, cut angle, best pocket, whether the shot is makeable, and the pre- and post-contact paths. A miss returns a straight aim line to the cushion instead of forced geometry.
 
-`POST /api/shots/simulate` goes one step further and answers *"how will the balls actually move?"*. It rolls the shot out with 2-D physics — rolling friction, elastic ball-to-ball collisions, cushion restitution, and pocket capture through the pocket mouth. `power` (0-1) sets the cue-ball speed. The response contains:
+`POST /api/shots/simulate` goes one step further and answers *"how will the balls actually move?"*. It rolls the shot out with 2-D physics — rolling friction, elastic ball-to-ball collisions, cushion restitution, and pocket capture through the pocket mouth. `power` sets the cue-ball speed at contact, either as a 0-1 fraction of the normal stroke range or as one of three real-world presets (`app/trajectory/service.py` → `POWER_PRESETS_MPS`):
+
+| level | speed at contact | typical use |
+|---|---|---|
+| `soft` | ≈ 1.5 m/s (~3.4 mph) | finesse / short roll-in |
+| `medium` | ≈ 2.5 m/s (~5.6 mph) | standard shot |
+| `hard` | ≈ 3.5 m/s (~7.8 mph) | full-stroke, close to the miscue-safe maximum (break shots sit far above this and are not modelled) |
+
+The response contains:
 
 - `balls`: every detected ball's time-sampled position path (`dt` seconds between samples); `potted_t` is the drop time, or `null` if the ball stays on the table.
 - `events`: an ordered timeline of `contact` (with cut angle), `cushion`, and `pot` events with times and positions.
 - `potted`, `first_ball_id`, `ghost_pos`, `cut_angle`, and `duration`.
+- `power_level` (`"soft"`/`"medium"`/`"hard"` or `null` for numeric power) and `speed_mps`, the contact speed actually used.
 
 ```sh
 curl http://127.0.0.1:8000/api/shots/simulate \
@@ -226,5 +236,7 @@ curl http://127.0.0.1:8000/api/shots/simulate \
 A full 12-ball roll-out finishes in well under 100 ms, so the endpoint can run live while aiming.
 
 In the UI, enable **Aim cue** below the virtual table and drag anywhere on the canvas: the drag length from the white ball sets the power, and the table plays the predicted motion in real time — the cue trail, balls rolling to their final resting positions, balls disappearing as they drop into a pocket, and a summary line (first contact time and cut angle, potted balls with pocket names, cushion count). Statuses mirror the planner: `no_cue_ball`, `multiple_cue_balls`, `no_targets`, `invalid_aim` (aim too close to the cue ball). The final resting layout stays on screen until the aim changes.
+
+**Power presets and comparison.** Instead of drag power, pick **Soft / Medium / Hard** in the aim row — the aim prediction then uses that real-world contact speed. **Compare** rolls the same aim at all three levels at once (`POST /api/shots/simulate/compare`, default levels `soft`, `medium`, `hard`): each level gets a chip (speed m/s, first contact, pots, cushions — click to replay that level's animation), and the virtual table draws a coloured ring where every ball comes to rest for each level, making the difference in spread between a soft and a hard hit directly visible.
 
 Scope: the simulation is idealized — no spin, throw, swerve, or jump, balls are pure sliding-free rollers, cushions reflect around the cloth boundary, and pocket geometry is a capture radius rather than modeled jaws. It is a fast, readable prediction of real motion, not a training-grade pool-physics engine. The backend has no built-in cue-stick detection: `aim_x/aim_y` must come from the UI drag or your own vision/sensor integration (`backend/app/vision.py` is the natural attachment point).
