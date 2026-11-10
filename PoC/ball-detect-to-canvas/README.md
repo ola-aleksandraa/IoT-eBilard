@@ -1,27 +1,38 @@
 # Ball / Detect
 
-A minimal live pool-table detector: choose a camera, connect it, and see the balls mapped to a virtual table. React + TypeScript + Vite; FastAPI + headless OpenCV. No neural model, GPU, or cloud vision service.
+A live pool-table system, split into two services:
+
+- **`backend/` — Raspberry Pi detection head.** FastAPI + headless OpenCV vision: it only finds the table corners and the balls and returns them as table coordinates. No simulation, no website.
+- **`central/` — central server.** Hosts the built website and everything `balls-and-physics`: shot planning (`/api/shots`), single-aim prediction and the full motion simulation (`/api/shots/simulate*`). Detection requests reaching it are proxied over HTTP to the Pi, so the browser talks to one origin.
+- **`src/` — the site** (React + TypeScript + Vite). No neural model, GPU, or cloud vision service.
 
 ## Start
 
 Use Node.js 22.12+ (Node 24 tested), Python 3.11–3.13, and [uv](https://docs.astral.sh/uv/).
 
-From `PoC/ball-detect-to-canvas`, start the backend:
+From `PoC/ball-detect-to-canvas/backend` (the Pi head — starts with detection only):
 
 ```sh
-cd backend
 uv sync --python 3.12
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-In another terminal, from `PoC/ball-detect-to-canvas`:
+On the central machine, from `PoC/ball-detect-to-canvas/central` (website + simulation; set `PI_BACKEND_URL` when the Pi's detection service is not on `127.0.0.1:8000`):
+
+```sh
+uv sync --python 3.12
+npm run --prefix .. build     # optional: also serves the built site at http://127.0.0.1:8001
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8001
+```
+
+In a terminal at `PoC/ball-detect-to-canvas` for the dev site with hot reload:
 
 ```sh
 npm ci
 npm run dev
 ```
 
-Open **http://127.0.0.1:5173**. API docs: **http://127.0.0.1:8000/docs**. Vite proxies `/api` to port 8000. Both dependency lockfiles are included.
+Open **http://127.0.0.1:5173**. The Vite dev server routes `/api/shots*` to the central server and all other `/api` calls to the Pi. In production you do not run the dev server: `central` serves `dist/` and proxies the rest. API docs: **http://127.0.0.1:8001/docs** (simulation) and **http://127.0.0.1:8000/docs** (detection). Both dependency lockfiles (`uv.lock`) are included.
 
 ## Live camera workflow
 
@@ -140,11 +151,14 @@ These numbers are illustrative, not a calibration for your camera. Intrinsics mu
 ```sh
 npm test
 npm run build
-cd backend
+cd backend   # vision / detection tests (the Pi head)
 uv run pytest -q
+cd ../central
+uv run pytest -q   # shot planning + motion-prediction (sim) tests
 ```
 
-- Backend tests: ground-truth localization under brightness changes, cue/pocket rejection, touching separation independently of Hough, classification/unknown rules, hue wraparound, inverse mapping, malformed input, EXIF/lens handling, automatic table loss/reacquisition, and the trajectory engine (planner, single-aim prediction, physics motion simulation: contacts, cushion hits, pots, statuses, validation).
+- Backend tests (Pi head): ground-truth localization under brightness changes, cue/pocket rejection, touching separation independently of Hough, classification/unknown rules, hue wraparound, inverse mapping, malformed input, EXIF/lens handling, and automatic table loss/reacquisition.
+- Central tests: the trajectory engine — planner, single-aim prediction, physics motion simulation (contacts, cushion hits, pots, statuses, validation).
 - Frontend tests: mocked camera lifecycle, cancellation, sequential requests, corner consensus/outlier rejection, fixed lock and recalibration, unstable mode, stationary jitter, real motion, dropouts, and type hysteresis.
 - Camera lifecycle tests use simulated media devices; they do not access your physical camera. The mounted camera still needs its own validation.
 
@@ -193,7 +207,7 @@ For a fixed installation, consistent exposure, a tighter table crop, and enough 
 
 ## Shot predictions (ghost-ball planner)
 
-`POST /api/shots` plans shots for the white ball with the engine in `backend/app/trajectory/` (adapted from [ai-billiard-system](https://github.com/carrotdan/ai-billiard-system)). It takes the balls from `/api/detect` in the same 0-1 table coordinates:
+`POST /api/shots` plans shots for the white ball with the engine in `central/app/trajectory/` (adapted from [ai-billiard-system](https://github.com/carrotdan/ai-billiard-system)). It takes the balls from `/api/detect` in the same 0-1 table coordinates:
 
 ```json
 {"balls": [{"id": 0, "kind": "cue", "x": 0.25, "y": 0.5, "radius": 0.026}, {"id": 1, "kind": "solid", "x": 0.6, "y": 0.4, "radius": 0.026}],
