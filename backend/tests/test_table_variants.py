@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import pytest
 
-from tests.test_api import assert_numerical, client, application, upload
+from tests.test_api import client, application, upload
 
 
 def table_frame(ratio, radius, cloth, portrait=False):
@@ -51,13 +51,6 @@ def test_same_endpoints_across_table_proportions_ball_sizes_and_cloth(client, ra
         ball = min(result["balls"], key=lambda b: (b["x"] - x) ** 2 + (b["y"] - y) ** 2)
         assert [ball["x"], ball["y"]] == pytest.approx([x, y], abs=.015)
         assert ball["radius"] == radius
-    layout = {"balls": result["balls"], "table_ratio": ratio}
-    for endpoint in ("shots", "shots/predict", "shots/simulate"):
-        options = layout if endpoint == "shots" else {**layout, "aim_x": .9, "aim_y": .3}
-        shot = client.post("/api/v1/" + endpoint, json=options)
-        assert shot.status_code == 200, shot.text
-        assert shot.json()["status"] == "ok"
-        assert_numerical(shot.json())
 
 
 def test_portrait_camera_and_upload_share_geometry_and_settings(client, application, monkeypatch):

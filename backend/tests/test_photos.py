@@ -51,15 +51,12 @@ def test_photo_detections_are_visible_balls_without_rail_or_pocket_phantoms(clie
                      ANNOTATIONS[name]["cue"]) < 12
 
 
-def test_real_photo_layout_drives_every_shot_endpoint(client):
-    result = upload(client, (PHOTOS / "table-3.png").read_bytes()).json()["detection"]
-    layout = {"balls": result["balls"], "table_ratio": result["geometry"]["table_ratio"]}
-    for path in ("shots", "shots/predict", "shots/simulate"):
-        options = layout if path == "shots" else {**layout, "aim_x": .9, "aim_y": .5}
-        response = client.post("/api/v1/" + path, json=options)
-        assert response.status_code == 200, response.text
-        assert response.json()["status"] == "ok"
-        assert_numerical(response.json())
+def test_real_photo_layout_is_numerical(client):
+    response = upload(client, (PHOTOS / "table-3.png").read_bytes())
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["detection"]["balls"]
+    assert_numerical(body)
 
 
 @pytest.mark.parametrize('number,rows', [

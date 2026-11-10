@@ -5,10 +5,9 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Body, Depends, File, Form, Request, UploadFile
 
 from ..engine.models import Settings
-from ..schemas import AnalysisOptions, AnalysisResult, CalibrationOptions, CalibrationResult, CameraStatus, Category, PredictRequest, PredictionResult, ShotsRequest, ShotsResult, SimulateRequest, SimulationResult
+from ..schemas import AnalysisOptions, AnalysisResult, CalibrationOptions, CalibrationResult, CameraStatus, Category
 from ..services.analysis import analyze, calibrate
 from ..services.images import parse_json, read_image
-from ..trajectory import plan_shots, predict_shot, simulate_motion
 from .dependencies import processing_slot
 
 router = APIRouter(prefix="/api/v1")
@@ -90,22 +89,3 @@ def camera_detect(request: Request, options: AnalysisOptions | None = Body(defau
     image, acquired_at = request.app.state.camera.capture()
     return analyze(image, options or AnalysisOptions(), "camera", acquired_at)
 
-
-@router.post("/shots", response_model=ShotsResult, tags=["Shots"], dependencies=guarded)
-def shots(options: ShotsRequest):
-    """Rank direct and bank shots using normalized ball positions; return numerical paths."""
-    return plan_shots(options.balls, options.table_ratio, options.top_n,
-                      options.include_bank, options.include_blocked)
-
-
-@router.post("/shots/predict", response_model=PredictionResult, response_model_exclude_unset=True, tags=["Shots"], dependencies=guarded)
-def predict(options: PredictRequest):
-    """Predict the first contact and pocket paths for a cue aim."""
-    return predict_shot(options.balls, options.table_ratio, (options.aim_x, options.aim_y))
-
-
-@router.post("/shots/simulate", response_model=SimulationResult, response_model_exclude_unset=True, tags=["Shots"], dependencies=guarded)
-def simulate(options: SimulateRequest):
-    """Roll out a cue aim with collisions, cushions and pots as time-sampled coordinates."""
-    return simulate_motion(options.balls, options.table_ratio,
-                           (options.aim_x, options.aim_y), options.power)

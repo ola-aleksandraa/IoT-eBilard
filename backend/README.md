@@ -1,13 +1,16 @@
 # Numerical ball-recognition backend
 
-FastAPI + CPU-only OpenCV. A frame enters the service; numerical recognition
-data leaves it. Rendering, colors, patterns and animation belong to the client.
+FastAPI + CPU-only OpenCV. This is the **Raspberry Pi service**: a frame enters
+the service; numerical ball-recognition data leaves it. Rendering, colors,
+patterns and animation belong to the client, and shot planning / motion
+simulation live on the **central server** (`../central`), which proxies
+detection to this one.
 The runtime contains no demo fixture, preview renderer, image encoder, image
 response endpoint, base64 payload or debug-image switch.
 
 ## Start and API reference
 
-Python **3.11–3.13** and [uv](https://docs.astral.sh/uv/) are required.
+Python **3.11â€“3.13** and [uv](https://docs.astral.sh/uv/) are required.
 From the repository root:
 
 ```sh
@@ -34,7 +37,7 @@ gateway when adding remote access/authentication.
 
 ## One environment for development and deployment
 
-`pyproject.toml` and `uv.lock` define the supported Python 3.11–3.13 environment.
+`pyproject.toml` and `uv.lock` define the supported Python 3.11â€“3.13 environment.
 Python 3.12 is the documented default. The Python 3.7 downgrade was reverted;
 Pydantic 1, Debian OpenCV 3.2 and the old `requirements-local.txt` are no longer
 installation paths. Use the frozen lockfile above on both development and
@@ -44,17 +47,14 @@ server machines. This service uses Pydantic 2 and headless OpenCV 4.
 
 | Method and path | Input | Numerical response |
 | --- | --- | --- |
-| `GET /health` | — | Process and OpenCV version |
-| `GET /api/v1/settings` | — | Default per-frame settings |
-| `GET /api/v1/categories` | — | `cue`, `eight`, `solid`, `striped`, `unknown` and meanings |
+| `GET /health` | â€” | Process and OpenCV version |
+| `GET /api/v1/settings` | â€” | Default per-frame settings |
+| `GET /api/v1/categories` | â€” | `cue`, `eight`, `solid`, `striped`, `unknown` and meanings |
 | `POST /api/v1/images/calibrate` | Multipart `file`, optional JSON string `config` | Source dimensions, normalized corners, forward/inverse homographies |
 | `POST /api/v1/images/detect` | Multipart `file`, optional JSON string `config` | Types, counts, normalized coordinates, geometry, decision evidence |
-| `POST /api/v1/shots` | Normalized ball layout | Ranked direct/bank shot paths and scores |
-| `POST /api/v1/shots/predict` | Layout and cue aim | First contact and pocket paths |
-| `POST /api/v1/shots/simulate` | Layout, cue aim and power | Time-sampled ball motion, contacts, cushions and pots |
-| `GET /api/v1/camera` | — | Server camera configuration, without accessing the device |
-| `POST /api/v1/camera/calibrate` | Optional `CalibrationOptions` JSON body | Internal capture → calibration/geometry JSON |
-| `POST /api/v1/camera/detect` | Optional `AnalysisOptions` JSON body | Internal capture → recognition JSON |
+| `GET /api/v1/camera` | â€” | Server camera configuration, without accessing the device |
+| `POST /api/v1/camera/calibrate` | Optional `CalibrationOptions` JSON body | Internal capture â†’ calibration/geometry JSON |
+| `POST /api/v1/camera/detect` | Optional `AnalysisOptions` JSON body | Internal capture â†’ recognition JSON |
 
 Upload options are a JSON string in a multipart form field because the file is
 binary input. Camera requests use normal typed JSON bodies. Unknown options,
@@ -74,8 +74,10 @@ curl -sS -X POST http://127.0.0.1:8001/api/v1/camera/detect \
 ```
 
 The OpenAPI schemas are the public contract for later web/mobile clients. Use
-`AnalysisOptions`, `AnalysisResult`, `Ball`, `Counts`, `Geometry`, `Calibration`,
-`LensCalibration`, `ShotsResult`, `PredictionResult` and `SimulationResult` from that contract when generating a client.
+`AnalysisOptions`, `AnalysisResult`, `Ball`, `Counts`, `Geometry`, `Calibration`
+and `LensCalibration` from that contract when generating a client. Shot
+contracts (`ShotsResult`, `PredictionResult`, `SimulationResult`) belong to the
+central service (`../central`).
 
 ## Moving to another table
 
@@ -86,10 +88,10 @@ pocket arrangements are outside the current physics model.
 1. Measure the inner playing surface (between cushion noses) and ball diameter
    in the same unit. Set `settings.table_ratio = long_side / short_side` and
    `settings.ball_radius_ratio = ball_diameter / (2 * short_side)`. The supported
-   ranges are 1–3 and 0.012–0.06 respectively. The defaults are starting values,
+   ranges are 1â€“3 and 0.012â€“0.06 respectively. The defaults are starting values,
    not measurements inferred from a perspective image.
 2. Use automatic corners first. If the image contains several cloth-colored
-   regions, supply `cloth_hue` (OpenCV HSV 0–179), `hue_tolerance` and
+   regions, supply `cloth_hue` (OpenCV HSV 0â€“179), `hue_tolerance` and
    `saturation_min`. Explicit color settings apply to both calibration and
    detection, for uploads and server-camera requests. With no hue override,
    calibration considers several color masks, including neutral cloth.
@@ -100,7 +102,7 @@ pocket arrangements are outside the current physics model.
    the shot endpoints. Keep the ratio with its layout; using the default ratio
    for a differently shaped table changes collision angles and clearances.
 
-The verification client's **Settings → Table setup** converts physical
+The verification client's **Settings â†’ Table setup** converts physical
 measurements to these settings and exposes cloth hue/saturation controls.
 Existing ratio/radius sliders remain available. Photos require **Apply to image**
 after a setting change; the live camera uses updated settings on the next frame.
@@ -125,7 +127,7 @@ Do not multiply radius by width or turn it into an ellipse. No frontend resoluti
 is imposed by the API. If physical cloth dimensions are known, positions in those
 units are `ball.x * cloth_width`, `ball.y * cloth_height`.
 
-`detection.geometry.source_to_table` is a 3×3 homography from **oriented source
+`detection.geometry.source_to_table` is a 3Ã—3 homography from **oriented source
 pixels** to **normalized cloth coordinates**. For source pixel `(u,v)`:
 
 ```text
@@ -204,7 +206,7 @@ once or retain `AnalysisResult.calibration`, then send it with subsequent frames
 }
 ```
 
-These example corners describe a 1000×500 **already top-down, full-frame** image.
+These example corners describe a 1000Ã—500 **already top-down, full-frame** image.
 For a real camera, choose the inner-cushion corners clockwise, first edge along
 the long side, normalized by `width-1` / `height-1`. The quadrilateral must be
 convex and cover at least 2.5% of the source. Reuse requires matching camera
@@ -246,11 +248,11 @@ points back with `calibration.lens`; a straight corrected rail is a curve in the
 original frame. The verification client does this for markers, rails and manual
 corner editing.
 
-`table_ratio=physical_cloth_width/physical_cloth_height` (1–3).
-`ball_radius_ratio=ball_diameter/(2*physical_cloth_height)` (0.012–0.06).
+`table_ratio=physical_cloth_width/physical_cloth_height` (1â€“3).
+`ball_radius_ratio=ball_diameter/(2*physical_cloth_height)` (0.012â€“0.06).
 For 57.15 mm balls and a 1120 mm short cloth dimension, use about 0.0255.
-Hue uses OpenCV's 0–179 scale; leave null for histogram estimation. Hue tolerance
-is 3–40, saturation minimum 15–180; touching-ball separation defaults to true.
+Hue uses OpenCV's 0â€“179 scale; leave null for histogram estimation. Hue tolerance
+is 3â€“40, saturation minimum 15â€“180; touching-ball separation defaults to true.
 
 Optional `lens` is accepted by both calibration and detection:
 
@@ -293,9 +295,9 @@ This remains a low-rate capture design with device-startup overhead.
 | --- | --- | --- |
 | `CAMERA_SOURCE` | `0` | Device index, stream URL or local video path |
 | `CAMERA_WIDTH` / `CAMERA_HEIGHT` | `1280` / `960` | Requested device resolution; actual dimensions are returned |
-| `CAMERA_WARMUP_FRAMES` | `3` | Read 1–30 frames, use last |
+| `CAMERA_WARMUP_FRAMES` | `3` | Read 1â€“30 frames, use last |
 | `CAMERA_TIMEOUT_MS` | `5000` | FFmpeg open/read timeout per operation, not whole-request deadline |
-| `OPENCV_THREADS` | `4` | OpenCV thread limit (1–16) |
+| `OPENCV_THREADS` | `4` | OpenCV thread limit (1â€“16) |
 
 A video file restarts on every request. USB-camera native drivers govern their
 own blocking reads; FFmpeg timeouts do not apply to that path. Source URLs and
@@ -313,17 +315,17 @@ app/
   api/routes.py           Upload, camera and configuration routes
   api/dependencies.py     Shared admission control
   services/analysis.py    Shared stateless calibration/recognition orchestration
-  services/geometry.py    Source-pixel ↔ normalized-table matrices
+  services/geometry.py    Source-pixel â†” normalized-table matrices
   services/images.py      Bounded decode, EXIF and internal lens correction
   services/camera.py      On-demand capture and guaranteed release
   engine/                 Original PoC detection/classification mathematics
-  trajectory/             Ported numerical shot planning and motion simulation
+  (no trajectory code)    Shot planning/motion simulation moved to ../central
 tests/fixtures/           Synthetic test data; not imported by the application
 ```
 
 The engine derives from PoC commit `660539e`. HSV thresholding, CIELAB local
 contrast, dominant-hue histograms, Gaussian/median filtering, morphology,
-connected components, contour circularity `4πA/P²`, minimum enclosing circles,
+connected components, contour circularity `4Ï€A/PÂ²`, minimum enclosing circles,
 Canny edges, gradient Hough circles, Euclidean distance transforms, local maxima,
 marker-controlled watershed, bounded white-balance channel gains, color-area
 ratios, angular sectors, classification thresholds, special-ball uniqueness
@@ -354,11 +356,13 @@ using the first PoC's complete camera/table interface, calibration controls,
 shot suggestions and animated cue simulation. Its fixture files are served by Vite. The backend
 does not import that client. Later apps can consume the same OpenAPI contract.
 
-JPEG, PNG and WebP inputs are supported. Limits: 12 MiB, 16 megapixels, 100–10,000
+JPEG, PNG and WebP inputs are supported. Limits: 12 MiB, 16 megapixels, 100â€“10,000
 pixels per side. `413` means exceeded limits, `415` unsupported format, `422`
 invalid image/options/calibration, `503` busy or unavailable camera. Busy responses
 include `Retry-After: 1`. The verification client serializes frame and shot requests through one queue,
 skips cancelled queued requests, and briefly retries explicit busy responses.
+Its shot-suggestion and cue-animation features need the central service
+(`../central`), which now owns `/api/v1/shots*`.
 One expensive operation runs per process; docs and health
 remain available. Inputs/results are processed in memory and not stored.
 
@@ -379,21 +383,9 @@ References: [FastAPI response contracts](https://fastapi.tiangolo.com/tutorial/r
 
 ## Shot requests
 
-Shot routes accept at most 24 balls with unique layout-local IDs. Each ball needs
-only `id`, `kind`, `x`, `y`, `radius`; extra detection evidence is ignored. Layout
-coordinates and drawing paths are normalized as above. `/shots` also accepts
-`top_n` (1–20), `include_bank` and `include_blocked`. Aim operations accept
-`aim_x`, `aim_y` in [0,1]; simulation adds `power` in [0,1]. All heavy operations
-share the same admission guard and return 503 while another operation is active.
-
-```sh
-curl -sS http://127.0.0.1:8001/api/v1/shots/simulate \
-  -H 'Content-Type: application/json' \
-  -d '{"balls":[{"id":1,"kind":"cue","x":0.2,"y":0.5,"radius":0.026},{"id":2,"kind":"solid","x":0.6,"y":0.5,"radius":0.026}],"aim_x":0.9,"aim_y":0.5,"power":0.6}'
-```
-
-Results describe hypothetical motion, not a calibrated forecast for the physical
-table. They contain coordinates/events only, without pixels or rendering styles.
+Shot ranking (`/api/v1/shots`), cue-aim prediction and ball-motion simulation
+moved to the central service - see **[../central/README.md](../central/README.md)**.
+Keep this process for detection only.
 
 ## Real-photo evaluation
 
@@ -421,7 +413,7 @@ and verify that later frames reuse a locked fit without recalibration. Local
 photo checks independently compare approximate pocket rows and preserve the
 existing one-to-one ball association and cue checks.
 
-The three user-supplied 1920×1080 frames are different layouts on one physical
+The three user-supplied 1920Ã—1080 frames are different layouts on one physical
 table. Approximate manual center annotations identify 11, 3 and 17 visible
 on-cloth balls. Default automatic recognition currently matches **7, 3 and 16**
 respectively, with no unmatched rail/pocket candidates under the test's 25-pixel
