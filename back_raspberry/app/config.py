@@ -7,8 +7,8 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class ServerConfig:
     camera_source: int | str = 0
-    camera_width: int = 1280
-    camera_height: int = 960
+    camera_width: int = 1920
+    camera_height: int = 1080
     camera_warmup_frames: int = 3
     camera_timeout_ms: int = 5000
     opencv_threads: int = 4
@@ -34,8 +34,8 @@ class ServerConfig:
         source = os.getenv("CAMERA_SOURCE", "0")
         return cls(
             camera_source=int(source) if source.lstrip("-").isdigit() else source,
-            camera_width=int(os.getenv("CAMERA_WIDTH", "1280")),
-            camera_height=int(os.getenv("CAMERA_HEIGHT", "960")),
+            camera_width=int(os.getenv("CAMERA_WIDTH", "1920")),
+            camera_height=int(os.getenv("CAMERA_HEIGHT", "1080")),
             camera_warmup_frames=int(os.getenv("CAMERA_WARMUP_FRAMES", "3")),
             camera_timeout_ms=int(os.getenv("CAMERA_TIMEOUT_MS", "5000")),
             opencv_threads=int(os.getenv("OPENCV_THREADS", "4")),

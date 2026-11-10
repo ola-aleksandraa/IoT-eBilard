@@ -115,6 +115,10 @@ def test_camera_source_credentials_are_not_disclosed():
 
 
 def test_environment_configuration(monkeypatch):
+    defaults = ServerConfig.from_env()
+    assert defaults.camera_width == 1920
+    assert defaults.camera_height == 1080
+
     monkeypatch.setenv("CAMERA_SOURCE", "2")
     monkeypatch.setenv("CAMERA_WIDTH", "1920")
     monkeypatch.setenv("CAMERA_HEIGHT", "1080")
