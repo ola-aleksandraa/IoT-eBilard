@@ -7,7 +7,7 @@
     "prepare": "panda codegen",
     "dev": "node scripts/dev.mjs",
     "dev:web": "vite",
-    "dev:api": "cd ../backend && uv run --frozen --python 3.12 uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload",
+    "dev:api": "cd ../back_website && uv run --frozen --python 3.12 uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview"

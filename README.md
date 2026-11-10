@@ -1,26 +1,33 @@
 # IoT-eBilard
 
-**[backend/](backend/README.md)** is the standalone numerical FastAPI service.
-It receives a frame or captures a server camera and returns JSON with ball
-categories, counts, normalized 2D coordinates, decision evidence and homography
-matrices. All visualization belongs to the consuming application.
+The backend is split into two FastAPI services (Python 3.11–3.13, uv):
 
-See the [backend startup instructions](backend/README.md#start-and-api-reference)
-for the Python 3.11–3.13 runtime restored by the downgrade revert. Run from `backend/`:
+- **[back_raspberry/](back_raspberry/README.md)** runs on the Raspberry Pi. It
+  captures a frame from its camera and returns JSON with ball categories, counts,
+  normalized 2D coordinates, decision evidence and homography matrices
+  (`/api/v1/camera`, `/camera/calibrate`, `/camera/detect`). Default port 8002.
+- **[back_website/](back_website/README.md)** serves the web application:
+  configuration (`/api/v1/settings`, `/categories`) and shot planning
+  (`/shots`, `/shots/predict`, `/shots/simulate`). Default port 8001.
+
+All visualization belongs to the consuming application. Run each service from
+its own directory:
 
 ```sh
+cd back_website   # or back_raspberry (with --port 8002)
 uv sync --python 3.12 --frozen
 uv run --frozen uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
 
-Interactive API: **[http://127.0.0.1:8001/docs](http://127.0.0.1:8001/docs)**.
+Interactive API: **[http://127.0.0.1:8001/docs](http://127.0.0.1:8001/docs)**
+(website) and **[http://127.0.0.1:8002/docs](http://127.0.0.1:8002/docs)** (Raspberry Pi).
 
 **[frontend/](frontend/README.md)** is the React + TypeScript + Panda CSS
 application (pnpm). Run from the repository root (or from `frontend/`):
 
 ```sh
 pnpm install   # installs frontend/ dependencies
-pnpm dev       # starts backend/ (:8001, via uv) + the frontend dev server
+pnpm dev       # starts back_website/ (:8001, via uv) + the frontend dev server
 ```
 
 The root `package.json` only forwards these scripts to `frontend/`
@@ -28,8 +35,8 @@ The root `package.json` only forwards these scripts to `frontend/`
 
 **[PoC/backend-verification/](PoC/backend-verification/README.md)** is a separate
 React client restoring the first PoC's camera/table interface, calibration,
-display stabilization, shot suggestions and cue animation. It connects to the root backend, uploads local/browser-camera pixels,
-and draws the numerical response locally. Fixtures are served by that client.
+display stabilization, shot suggestions and cue animation. It uploads local/browser-camera pixels
+to the former `/images/*` endpoints, which the split backends no longer provide.
 
 ```sh
 cd PoC/backend-verification

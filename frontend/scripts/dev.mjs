@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// `pnpm dev`: starts the FastAPI backend (../backend, port 8001) and the Vite dev server.
+// `pnpm dev`: starts the website FastAPI backend (../back_website, port 8001) and the Vite dev server.
 //
 // - If a backend already answers on BACKEND_URL (default http://127.0.0.1:8001), it is reused.
 // - If BACKEND_URL points somewhere else, or uv cannot be found, only Vite starts and the
@@ -11,7 +11,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const backendDir = resolve(root, '../backend')
+const backendDir = resolve(root, '../back_website')
 const backendUrl = process.env.BACKEND_URL ?? 'http://127.0.0.1:8001'
 const isLocalDefault = !process.env.BACKEND_URL || /^http:\/\/(127\.0\.0\.1|localhost):8001\/?$/.test(backendUrl)
 

@@ -1,7 +1,7 @@
 {
   "name": "ebilard",
   "private": true,
-  "description": "Root shortcuts: every script runs in frontend/ (pnpm dev also starts backend/).",
+  "description": "Root shortcuts: every script runs in frontend/ (pnpm dev also starts back_website/).",
   "scripts": {
     "postinstall": "pnpm --dir frontend install",
     "dev": "pnpm --dir frontend dev",

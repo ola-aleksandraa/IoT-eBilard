@@ -1,1 +1,0 @@
-"""Standalone IoT-eBilard backend."""

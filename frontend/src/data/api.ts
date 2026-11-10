@@ -1,5 +1,5 @@
-// Minimal client for the root backend (backend/, FastAPI, /api/v1). Vite proxies /api.
-// Response types are the subset of backend/app/schemas.py this UI reads.
+// Minimal client for the website backend (back_website/, FastAPI, /api/v1). Vite proxies /api.
+// Response types are the subset of back_website/app/schemas.py and back_raspberry/app/schemas.py this UI reads.
 import type { BallKind, PocketIndex, Point, ShotSuggestion, TableBall } from './types'
 
 const API = '/api/v1'

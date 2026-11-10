@@ -1,7 +1,7 @@
 // Domain types for the table view.
 //
 // Ball / shot shapes intentionally mirror the backend contract
-// (backend/app/schemas.py: Ball, ShotBall, Shot) so live data can be dropped in:
+// (back_raspberry/app/schemas.py: Ball; back_website/app/schemas.py: ShotBall, Shot) so live data can be dropped in:
 // coordinates are 0..1 of the playing surface, origin top-left, y pointing down,
 // radius is a fraction of the table height.
 
