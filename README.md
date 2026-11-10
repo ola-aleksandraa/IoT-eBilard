@@ -16,12 +16,15 @@ uv run --frozen uvicorn app.main:app --host 127.0.0.1 --port 8001
 Interactive API: **[http://127.0.0.1:8001/docs](http://127.0.0.1:8001/docs)**.
 
 **[frontend/](frontend/README.md)** is the React + TypeScript + Panda CSS
-application (pnpm). Run from `frontend/`:
+application (pnpm). Run from the repository root (or from `frontend/`):
 
 ```sh
-pnpm install
-pnpm dev
+pnpm install   # installs frontend/ dependencies
+pnpm dev       # starts backend/ (:8001, via uv) + the frontend dev server
 ```
+
+The root `package.json` only forwards these scripts to `frontend/`
+(`dev`, `dev:web`, `dev:api`, `build`, `lint`, `preview`).
 
 **[PoC/backend-verification/](PoC/backend-verification/README.md)** is a separate
 React client restoring the first PoC's camera/table interface, calibration,
