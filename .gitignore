@@ -5,7 +5,7 @@ __pycache__/
 .DS_Store
 .env
 .ruff_cache/
-backend/evaluation-output/
+back_raspberry/evaluation-output/
 node_modules/
 dist/
 *.tsbuildinfo

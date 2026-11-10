@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "prepare": "panda codegen",
-    "dev": "vite",
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "vite",
+    "dev:api": "cd ../back_website && uv run --frozen --python 3.12 uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload",
+    "dev:pi": "cd ../back_raspberry && uv run --frozen --python 3.12 uvicorn app.main:app --host 127.0.0.1 --port 8002 --reload",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview"

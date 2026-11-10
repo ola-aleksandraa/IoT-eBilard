@@ -1,0 +1,16 @@
+{
+  "name": "ebilard",
+  "private": true,
+  "description": "Root shortcuts: every script runs in frontend/ (pnpm dev also starts back_website/).",
+  "scripts": {
+    "postinstall": "pnpm --dir frontend install",
+    "dev": "pnpm --dir frontend dev",
+    "dev:web": "pnpm --dir frontend dev:web",
+    "dev:api": "pnpm --dir frontend dev:api",
+    "dev:pi": "pnpm --dir frontend dev:pi",
+    "build": "pnpm --dir frontend build",
+    "lint": "pnpm --dir frontend lint",
+    "preview": "pnpm --dir frontend preview"
+  },
+  "packageManager": "pnpm@10.16.1"
+}
