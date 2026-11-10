@@ -31,7 +31,7 @@ class Camera:
         capture = None
         try:
             if isinstance(source, int):
-                capture = cv2.VideoCapture(source)
+                capture = cv2.VideoCapture(source, cv2.CAP_V4L2)
             else:
                 # FFmpeg accepts these open-only timeout parameters for network
                 # streams. Files also use this path for reproducible validation.
@@ -42,6 +42,10 @@ class Camera:
             if not capture.isOpened():
                 raise HTTPException(503, "Camera unavailable. Check CAMERA_SOURCE, permissions and connection.")
             if isinstance(source, int):
+                capture.set(
+                    cv2.CAP_PROP_FOURCC,
+                    cv2.VideoWriter_fourcc(*"MJPG"),
+                )
                 capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.config.camera_width)
                 capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.config.camera_height)
                 capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -53,6 +57,18 @@ class Camera:
                     raise HTTPException(503, "Camera returned no frame. Check the source or reconnect it.")
             captured_at = datetime.now(timezone.utc)
             validate_dimensions(frame.shape[1], frame.shape[0])
+            if isinstance(source, int) and frame.shape[1::-1] != (
+                self.config.camera_width,
+                self.config.camera_height,
+            ):
+                actual_width, actual_height = frame.shape[1::-1]
+                raise HTTPException(
+                    503,
+                    f"Camera returned {actual_width}x{actual_height}, but "
+                    f"{self.config.camera_width}x{self.config.camera_height} was requested. "
+                    "Check that the camera supports this resolution and restart the backend "
+                    "after changing CAMERA_WIDTH or CAMERA_HEIGHT.",
+                )
             return frame, captured_at
         except cv2.error:
             raise HTTPException(503, "Camera capture failed. Check the source and OpenCV video backend.") from None

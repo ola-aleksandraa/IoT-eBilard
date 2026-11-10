@@ -15,11 +15,13 @@ class FakeCapture:
         self.readable = readable
         self.released = False
         self.reads = 0
+        self.settings = []
 
     def isOpened(self):
         return self.opened
 
     def set(self, *args):
+        self.settings.append(args)
         return True
 
     def read(self):
@@ -34,12 +36,17 @@ class FakeCapture:
 def test_capture_always_releases_device(monkeypatch, opened, readable, success):
     capture = FakeCapture(opened=opened, readable=readable)
     monkeypatch.setattr(cv2, "VideoCapture", lambda *args: capture)
-    camera = Camera(ServerConfig())
+    camera = Camera(ServerConfig(camera_width=1200, camera_height=760))
     if success:
         frame, captured_at = camera.capture()
         assert frame.shape == (760, 1200, 3)
         assert captured_at.tzinfo is not None
         assert capture.reads == 3
+        assert capture.settings[:3] == [
+            (cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG")),
+            (cv2.CAP_PROP_FRAME_WIDTH, 1200),
+            (cv2.CAP_PROP_FRAME_HEIGHT, 760),
+        ]
     else:
         with pytest.raises(HTTPException) as exc:
             camera.capture()
@@ -54,7 +61,8 @@ def test_camera_endpoint_errors_and_recovery(monkeypatch):
         captures.append(capture)
         return capture
     monkeypatch.setattr(cv2, "VideoCapture", factory)
-    with TestClient(create_app(ServerConfig())) as client:
+    config = ServerConfig(camera_width=1200, camera_height=760)
+    with TestClient(create_app(config)) as client:
         assert client.get("/api/v1/camera").json()["device_index"] == 0
         assert not captures, "Status must not activate the camera"
         assert client.post("/api/v1/camera/detect", json={}).status_code == 503
@@ -67,6 +75,19 @@ def test_camera_endpoint_errors_and_recovery(monkeypatch):
         assert len(calibration.json()["calibration"]["corners"]) == 4
         assert calibration.headers["content-type"] == "application/json"
     assert all(capture.released for capture in captures)
+
+
+def test_camera_rejects_resolution_mismatch(monkeypatch):
+    capture = FakeCapture()
+    monkeypatch.setattr(cv2, "VideoCapture", lambda *args: capture)
+
+    with pytest.raises(HTTPException) as exc:
+        Camera(ServerConfig()).capture()
+
+    assert exc.value.status_code == 503
+    assert "Camera returned 1200x760" in exc.value.detail
+    assert "1920x1080 was requested" in exc.value.detail
+    assert capture.released
 
 
 def test_camera_backend_exception_is_retryable_and_released(monkeypatch):
@@ -120,11 +141,11 @@ def test_environment_configuration(monkeypatch):
     assert defaults.camera_height == 1080
 
     monkeypatch.setenv("CAMERA_SOURCE", "2")
-    monkeypatch.setenv("CAMERA_WIDTH", "1920")
-    monkeypatch.setenv("CAMERA_HEIGHT", "1080")
+    monkeypatch.setenv("CAMERA_WIDTH", "1200")
+    monkeypatch.setenv("CAMERA_HEIGHT", "760")
     config = ServerConfig.from_env()
     assert config.camera_source == 2
-    assert config.camera_width == 1920
+    assert (config.camera_width, config.camera_height) == (1200, 760)
     monkeypatch.setenv("CAMERA_SOURCE", "-1")
     with pytest.raises(ValueError):
         ServerConfig.from_env()
