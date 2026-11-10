@@ -7,6 +7,7 @@
     "dev": "pnpm --dir frontend dev",
     "dev:web": "pnpm --dir frontend dev:web",
     "dev:api": "pnpm --dir frontend dev:api",
+    "dev:pi": "pnpm --dir frontend dev:pi",
     "build": "pnpm --dir frontend build",
     "lint": "pnpm --dir frontend lint",
     "preview": "pnpm --dir frontend preview"

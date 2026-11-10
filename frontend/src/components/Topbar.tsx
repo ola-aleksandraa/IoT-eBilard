@@ -30,7 +30,7 @@ export function Topbar({ title, live, source, players }: TopbarProps) {
 
       <div className={css({ ml: 'auto', display: 'flex', alignItems: 'center', gap: '12px' })}>
         <span
-          title={source === 'backend' ? 'Pozycje bil z backendu (detekcja zdjęcia testowego)' : 'Backend niedostępny – dane przykładowe'}
+          title={source === 'backend' ? 'Pozycje bil z kamery Raspberry Pi' : 'Backend niedostępny – dane przykładowe'}
           className={css({ textStyle: 'eyebrow', color: 'textSubtle', mr: '12px' })}
         >
           {source === 'backend' ? 'Dane: backend' : 'Dane: mock'}
