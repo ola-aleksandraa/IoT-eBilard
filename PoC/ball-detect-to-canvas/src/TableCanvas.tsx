@@ -1,12 +1,13 @@
 import { useEffect, useRef } from 'react'
-import { BALL_COLORS, type Ball, type MotionPrediction, type Point, type Shot } from './types'
+import { BALL_COLORS, POWER_LEVEL_COLORS, type Ball, type MotionCompare, type MotionPrediction, type Point, type Shot } from './types'
 
 const NO_SHOTS: Shot[] = []
 
-export default function TableCanvas({ balls, ratio, selected, onSelect, showLabels, showGrid, shots = NO_SHOTS, activeShot = 0, aimMode = false, aim = null, motion = null, motionElapsed = 0, onAim }: {
+export default function TableCanvas({ balls, ratio, selected, onSelect, showLabels, showGrid, shots = NO_SHOTS, activeShot = 0, aimMode = false, aim = null, motion = null, motionElapsed = 0, compare = null, onAim }: {
   balls: Ball[]; ratio: number; selected: number | null; onSelect: (id: number | null) => void; showLabels: boolean; showGrid: boolean;
   shots?: Shot[]; activeShot?: number;
-  aimMode?: boolean; aim?: Point | null; motion?: MotionPrediction | null; motionElapsed?: number; onAim?: (point: Point) => void;
+  aimMode?: boolean; aim?: Point | null; motion?: MotionPrediction | null; motionElapsed?: number;
+  compare?: MotionCompare | null; onAim?: (point: Point) => void;
 }) {
   const ref = useRef<HTMLCanvasElement>(null)
   const geometry = useRef({ x: 0, y: 0, w: 1, h: 1 })
@@ -134,10 +135,29 @@ export default function TableCanvas({ balls, ratio, selected, onSelect, showLabe
           ctx.fillText(String(ball.id).padStart(2, '0'), bx, by - r - 6); ctx.textAlign = 'left'
         }
       }
+      // Power comparison: one coloured ring per level around every ball's final
+      // resting position — the separation between rings shows how the spread of
+      // the balls depends on the shot strength.
+      if (compare) {
+        compare.levels?.forEach((level, levelIndex) => {
+          if (!level || level.status !== 'ok') return
+          ctx.save(); ctx.globalAlpha = 0.65
+          ctx.strokeStyle = POWER_LEVEL_COLORS[level.level]; ctx.lineWidth = 1.5
+          if (levelIndex === 0) ctx.setLineDash([3, 3])
+          for (const entry of level.balls) {
+            if (entry.potted_t != null || entry.path.length < 1) continue
+            const resting = entry.path[entry.path.length - 1]
+            const ringR = Math.max(4, (balls.find(candidate => candidate.id === entry.id)?.radius ?? cueBall?.radius ?? 0.026) * h) + 2
+            const [fx, fy] = at(resting)
+            ctx.beginPath(); ctx.arc(fx, fy, ringR, 0, Math.PI * 2); ctx.stroke()
+          }
+          ctx.restore()
+        })
+      }
     }
     const observer = new ResizeObserver(render); observer.observe(canvas); render()
     return () => observer.disconnect()
-  }, [balls, ratio, selected, showLabels, showGrid, shots, activeShot, aimMode, aim, motion, motionElapsed])
+  }, [balls, ratio, selected, showLabels, showGrid, shots, activeShot, aimMode, aim, motion, motionElapsed, compare])
   const dragAim = useRef(false)
   const tablePoint = (event: React.PointerEvent<HTMLCanvasElement>): Point => {
     const bounds = event.currentTarget.getBoundingClientRect(), { x, y, w, h } = geometry.current

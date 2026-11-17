@@ -11,8 +11,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import ValidationError
 
 from .demo import demo_response
-from .models import Calibration, DetectionRequest, LensCalibration, LiveRequest, PredictRequest, ShotsRequest, SimulateRequest
-from .trajectory import plan_shots, predict_shot, simulate_motion
+from .models import Calibration, DetectionRequest, LensCalibration, LiveRequest
 from .vision import detect, image_url, suggest_corners
 
 MAX_UPLOAD_BYTES = 12 * 1024 * 1024
@@ -131,36 +130,7 @@ def live_frame(file: UploadFile = File(...), config: str = Form("{}")):
         processing_slot.release()
 
 
-@app.post("/api/shots")
-def shots(request: ShotsRequest):
-    """Ghost-ball shot planning for detected balls.
-
-    Input/output use the same 0-1 table coordinates as /api/detect. Each shot has the cue-ball path,
-    target-ball path, cue-ball deflection after contact, ghost-ball position, score and block reason.
-    """
-    return plan_shots(request.balls, request.table_ratio, request.top_n,
-                      request.include_bank, request.include_blocked)
-
-
-@app.post("/api/shots/predict")
-def shots_predict(request: PredictRequest):
-    """Predict the outcome of one cue-stick aim.
-
-    The cue ball travels from its detected position toward `aim_x/aim_y` (0-1 table
-    coordinates - the position the cue stick points at). The response reports which
-    ball is hit first, the ghost-ball position, the cut angle, the best straight
-    pocket for the hit ball, whether the shot is makeable, and the drawing paths.
-    """
-    return predict_shot(request.balls, request.table_ratio, (request.aim_x, request.aim_y))
-
-
-@app.post("/api/shots/simulate")
-def shots_simulate(request: SimulateRequest):
-    """Real-motion prediction: physics roll-out of one cue-stick aim.
-
-    Same inputs as /api/shots/predict plus `power` (0-1, shot strength). Every
-    ball gets a time-sampled position path, the response lists contacts, cushion
-    hits and pots in order, and which balls end up pocketed.
-    """
-    return simulate_motion(request.balls, request.table_ratio,
-                           (request.aim_x, request.aim_y), request.power)
+# Shot planning and ball-motion simulation intentionally do NOT live here.
+# This deployment target is the Raspberry Pi camera head: detection only.
+# The full set of /api/shots* endpoints is served by the central server
+# (../central), which also hosts the website at PoC level.

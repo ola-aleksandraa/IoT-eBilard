@@ -34,6 +34,10 @@ export const SHOT_MESSAGES: Record<Exclude<ShotsResponse['status'], 'ok'> | 'inv
   invalid_aim: 'Aim point is inside the white ball.',
 }
 // Live cue-stick prediction: full physics roll-out (motion, not just pocket lines).
+export type PowerLevel = 'soft' | 'medium' | 'hard'
+export const POWER_LEVEL_NAMES: Record<PowerLevel, string> = { soft: 'Soft', medium: 'Medium', hard: 'Hard' }
+// Colors shared by the comparison chips and the resting-position rings.
+export const POWER_LEVEL_COLORS: Record<PowerLevel, string> = { soft: '#66d9e8', medium: '#ffd166', hard: '#ff8fa3' }
 export type MotionEvent = {
   t: number; type: 'contact' | 'cushion' | 'pot'; ball: number; with?: number; pocket?: number
   x?: number; y?: number; cut_angle?: number
@@ -43,8 +47,13 @@ export type MotionPrediction = {
   status: 'ok' | 'no_cue_ball' | 'multiple_cue_balls' | 'no_targets' | 'invalid_aim'
   cue_ball_id: number | null; first_ball_id: number | null
   ghost_pos: [number, number] | null; cut_angle: number | null
-  power: number; duration: number; dt: number
+  power: number; power_level?: PowerLevel | null; speed_mps?: number | null
+  duration: number; dt: number
   balls: MotionBall[]; events: MotionEvent[]; potted: number[]
+}
+export type MotionCompare = {
+  status: 'ok' | 'mixed'; cue_ball_id: number | null
+  levels: (MotionPrediction & { level: PowerLevel })[]
 }
 export type Frame = { image: string; width: number; height: number; name: string; synthetic: boolean; lens_corrected?: boolean }
 export type LiveResponse = { table_status: 'searching' | 'detected'; calibration: Calibration | null; detection: Detection | null }
