@@ -1,7 +1,7 @@
 [project]
 name = "iot-ebilard-website"
 version = "1.0.0"
-description = "Website backend: configuration and numerical shot planning/simulation on normalized ball layouts"
+description = "Website backend: configuration, numerical shot planning/simulation and the table state database fed by the camera watcher"
 requires-python = ">=3.11,<3.14"
 dependencies = [
   "fastapi>=0.115,<1",
@@ -9,6 +9,10 @@ dependencies = [
   "uvicorn>=0.34,<1",
   "numpy>=2.2,<3",
   "opencv-python-headless>=4.11,<5",
+  "sqlalchemy>=2.0,<3",
+  "pymysql>=1.1,<2",
+  "cryptography>=42",
+  "httpx>=0.28,<1",
 ]
 
 [dependency-groups]

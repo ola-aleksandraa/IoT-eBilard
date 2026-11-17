@@ -2,11 +2,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.table_state.config import WatchConfig
 
 
 @pytest.fixture
 def client():
-    with TestClient(create_app()) as client:
+    with TestClient(create_app(database_url="sqlite://", watch_config=WatchConfig(enabled=False))) as client:
         yield client
 
 
@@ -32,10 +33,17 @@ def test_docs_and_contract_expose_only_website_routes(client):
     assert client.get("/health").json() == {"status": "ok", "service": "website", "version": "1.0.0"}
     schema = client.get("/openapi.json").json()
     assert set(schema["paths"]) == {"/health", "/api/v1/settings", "/api/v1/categories",
-                                    "/api/v1/shots", "/api/v1/shots/predict", "/api/v1/shots/simulate"}
+                                    "/api/v1/shots", "/api/v1/shots/predict", "/api/v1/shots/simulate",
+                                    "/api/v1/states", "/api/v1/states/latest", "/api/v1/states/watcher",
+                                    "/api/v1/states/{state_id}", "/api/v1/states/{state_id}/balls",
+                                    "/api/v1/table/live"}
     for path, operations in schema["paths"].items():
         for operation in operations.values():
-            assert set(operation["responses"]["200"]["content"]) == {"application/json"}, path
+            success = {code: r for code, r in operation["responses"].items() if code.startswith("2")}
+            assert success, path
+            for code, response in success.items():
+                if code != "204":  # 204 No Content has no body
+                    assert set(response["content"]) == {"application/json"}, path
 
 
 @pytest.mark.parametrize("path", ["images/detect", "images/calibrate", "camera", "camera/detect", "camera/calibrate"])
