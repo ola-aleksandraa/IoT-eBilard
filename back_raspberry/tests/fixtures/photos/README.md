@@ -16,3 +16,18 @@ recall, not perfect localization or classification. The first frame still loses
 four balls beside the rails/hand; the third still loses one rail-adjacent ball.
 The second frame's former chain of five false cushion balls must stay absent.
 These are three views of one physical table, not a multi-table accuracy study.
+
+## Gameplay, 2026-11-18
+
+[`live-2026-11-18/`](live-2026-11-18/) contains full-size 1280 × 800 JPEG frames
+selected from one game on a physical table. Filenames record capture time in
+Europe/Warsaw.
+The set includes settled layouts and frames with moving balls, a cue, or a hand
+over the cloth. These frames have no reference annotations and can be used for
+manual evaluation of ball detection and table calibration.
+
+Run from `back_raspberry/`:
+
+```sh
+uv run --frozen python -m scripts.evaluate_images tests/fixtures/photos/live-2026-11-18/*.jpg
+```
