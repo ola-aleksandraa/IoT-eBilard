@@ -31,3 +31,18 @@ Run from `back_raspberry/`:
 ```sh
 uv run --frozen python -m scripts.evaluate_images tests/fixtures/photos/live-2026-11-18/*.jpg
 ```
+
+## Manual ball mixing, 2026-11-18
+
+[`mixed-balls-2026-11-18/`](mixed-balls-2026-11-18/) contains 1280 × 800 JPEG
+frames of balls moved by hand between layouts. The set covers simultaneous
+motion, motion blur, hands over the cloth, and balls close to rails and pockets.
+Timestamped frames come from the initial one-frame-per-second capture. Files
+prefixed with `mix-` use frame numbers from the four-frames-per-second capture.
+The frames have no reference annotations and are intended for manual evaluation.
+
+Run from `back_raspberry/`:
+
+```sh
+uv run --frozen python -m scripts.evaluate_images tests/fixtures/photos/mixed-balls-2026-11-18/*.jpg
+```
